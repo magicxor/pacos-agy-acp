@@ -141,7 +141,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
             DenyReadWrite(path);
         }
 
-        AppendCommandRules(allow, deny, deniedPaths);
+        AppendCommandRules(allow, deny, deniedPaths, _workspaceRoot, $"{cli}/brain");
 
         var policy = new { model = _chatModel, permissions = new { allow, deny }, toolPermission = "strict" };
         return JsonSerializer.Serialize(policy, PolicyJsonOptions);
@@ -238,7 +238,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
     /// permit only a single file-delivery command of the exact shape
     /// <c>cp &lt;safe-src&gt; &lt;safe-dst&gt;</c> and deny everything else.
     /// </summary>
-    private void AppendCommandRules(List<string> allow, List<string> deny, List<string> deniedPaths)
+    private void AppendCommandRules(List<string> allow, List<string> deny, List<string> deniedPaths, string workspaceRoot, string brainDir)
     {
         switch (_commandRuleMode)
         {
@@ -251,12 +251,12 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
                 break;
 
             case "nolookahead":
-                AppendNoLookaheadCommandRules(allow, deny, deniedPaths);
+                AppendNoLookaheadCommandRules(allow, deny, deniedPaths, workspaceRoot, brainDir);
                 break;
 
             default:
                 // Unknown value falls back to the safe default.
-                AppendNoLookaheadCommandRules(allow, deny, deniedPaths);
+                AppendNoLookaheadCommandRules(allow, deny, deniedPaths, workspaceRoot, brainDir);
                 break;
         }
     }
@@ -276,7 +276,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
     /// container read-only rootfs blocks writes elsewhere. Sensitive source roots are
     /// denied by name as a best-effort. This is defense-in-depth, not a boundary.
     /// </summary>
-    private static void AppendNoLookaheadCommandRules(List<string> allow, List<string> deny, List<string> deniedPaths)
+    private static void AppendNoLookaheadCommandRules(List<string> allow, List<string> deny, List<string> deniedPaths, string workspaceRoot, string brainDir)
     {
         // agy treats command(...) and unsandboxed(...) as separate permission verbs,
         // so every rule body has to be registered under both. These helpers emit the
@@ -293,8 +293,15 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
             deny.Add($"unsandboxed({body})");
         }
 
-        AddAllow("cp /tmp/pacos-agy/[-A-Za-z0-9._/]* /home/agent/.gemini/antigravity-cli/brain/[-A-Za-z0-9._/]*");
-        AddAllow("cp /home/agent/.gemini/antigravity-cli/brain/[-A-Za-z0-9._/]* /tmp/pacos-agy/[-A-Za-z0-9._/]*");
+        // The workspace root and the agy brain staging dir are resolved dynamically
+        // (HOME and WorkingDirectoryRoot can vary), so the cp allowlist tracks the
+        // same locations the file I/O policy grants. Escape them because command
+        // rules are regexes (a literal '.' must not act as "any char").
+        var workspace = Regex.Escape(workspaceRoot);
+        var brain = Regex.Escape(brainDir);
+
+        AddAllow($"cp {workspace}/[-A-Za-z0-9._/]* {brain}/[-A-Za-z0-9._/]*");
+        AddAllow($"cp {brain}/[-A-Za-z0-9._/]* {workspace}/[-A-Za-z0-9._/]*");
 
         // --- Command is not the exact shape "cp <arg> <arg>" ---
         AddDeny("[^c].*");  // does not start with 'c'
