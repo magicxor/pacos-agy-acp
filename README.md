@@ -1,7 +1,7 @@
 # Pacos Telegram Bot
 
-[![master branch - test, build, push, deploy](https://github.com/magicxor/pacos2/actions/workflows/on_master_push.yml/badge.svg)](https://github.com/magicxor/pacos2/actions/workflows/on_master_push.yml)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/magicxor/pacos2)
+[![master branch - test, build, push, deploy](https://github.com/magicxor/pacos-agy-acp/actions/workflows/on_master_push.yml/badge.svg)](https://github.com/magicxor/pacos-agy-acp/actions/workflows/on_master_push.yml)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/magicxor/pacos-agy-acp)
 
 Pacos is a .NET-based Telegram bot designed to interact in group chats. It drives the agy (Google Antigravity) CLI agent through the `agy-acp` ACP adapter to produce chat responses, run tools, and deliver generated files.
 
@@ -23,8 +23,8 @@ Pacos is a .NET-based Telegram bot designed to interact in group chats. It drive
 ## Core Technologies
 
 - **Framework**: .NET (Worker Service)
-- **Telegram API**: `Telegram.Bot` library
-- **AI Agent**: agy (Google Antigravity CLI), driven via the `agy-acp` ACP adapter (Rust)
+- **Telegram API**: [Telegram.Bot](https://github.com/TelegramBots/telegram.bot) library
+- **AI Agent**: agy ([Google Antigravity CLI](https://antigravity.google/docs/cli-using)), driven via the `agy-acp` [ACP adapter](https://github.com/openabdev/openab)
 - **Logging**: NLog (configured via `nlog.config`)
 - **Configuration**: Standard .NET configuration (e.g., `appsettings.json`, environment variables)
 - **Language Detection**: `NTextCat`
