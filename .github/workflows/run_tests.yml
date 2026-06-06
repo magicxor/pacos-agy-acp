@@ -47,12 +47,6 @@ jobs:
         echo "matrix dotnet version: ${{ matrix.dotnet.version }}"
         dotnet --version
 
-    - name: Copy config
-      env:
-        BANWORDS_CONTENT: test
-      run: |
-        printf "%s" "$BANWORDS_CONTENT" > ./${{ env.MAIN_PROJECT_DIR }}/banwords.txt
-
     - name: Run tests
       run: |
         dotnet tool install --global Microsoft.CodeCoverage.Console
