@@ -370,6 +370,7 @@ public sealed class AcpConnection : IAsyncDisposable
             try
             {
                 await _runTask;
+                _runTask.Dispose();
             }
             catch (Exception e)
             {

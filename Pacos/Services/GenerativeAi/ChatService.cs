@@ -13,7 +13,7 @@ namespace Pacos.Services.GenerativeAi;
 /// through a per-turn scratch directory, and returns the agent's reply together
 /// with any files it produced.
 /// </summary>
-public sealed class ChatService : IDisposable
+public sealed class ChatService : IAsyncDisposable
 {
     private const string SteeringFileName = "GEMINI.md";
 
@@ -173,7 +173,7 @@ public sealed class ChatService : IDisposable
         return _chatSemaphores.GetOrAdd(chatId, _ => new SemaphoreSlim(initialCount: 1, maxCount: 1));
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         foreach (var semaphore in _chatSemaphores.Values)
         {
@@ -181,5 +181,7 @@ public sealed class ChatService : IDisposable
         }
 
         _chatSemaphores.Clear();
+
+        await _sessionPool.DisposeAsync();
     }
 }

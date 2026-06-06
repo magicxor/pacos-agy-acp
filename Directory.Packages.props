@@ -15,8 +15,8 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </GlobalPackageReference>
-    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.18.0.131500" />
-    <GlobalPackageReference Include="SharpSource" Version="1.27.1" />
+    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.27.0.140913" />
+    <GlobalPackageReference Include="SharpSource" Version="1.33.1" />
     <GlobalPackageReference Include="Nullable.Extended.Analyzer" Version="1.15.6581" />
   </ItemGroup>
   <!-- Package versions -->
