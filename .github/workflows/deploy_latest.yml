@@ -36,6 +36,15 @@ jobs:
           script: |
             docker pull ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }}
             docker volume create pacos_agy_acp_${{ inputs.environment }}
+            # Ensure the named volume is owned by the non-root `agent` user. A volume
+            # created by an earlier deploy (or on a path missing from the image) is
+            # owned by root:root, which makes agy fail with "permission denied" when
+            # writing its state. Running chown from the same image resolves `agent`
+            # to the correct uid/gid. Idempotent: safe to run on every deploy.
+            docker run --rm --user root --entrypoint chown \
+              -v pacos_agy_acp_${{ inputs.environment }}:/home/agent/.gemini \
+              ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }} \
+              -R agent:agent /home/agent/.gemini
             docker stop ${{ inputs.container_name }} || true
             docker rm ${{ inputs.container_name }} || true
             docker run -i -t -d --restart=always --name=${{ inputs.container_name }} \
