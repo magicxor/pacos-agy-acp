@@ -1,0 +1,29 @@
+<!-- see https://learn.microsoft.com/en-us/visualstudio/msbuild/customize-by-directory -->
+<!-- see https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/overview -->
+<Project>
+  <PropertyGroup>
+    <!-- Code analysis -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>9-all</AnalysisLevel>
+
+    <!-- Warnings and errors -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Features>strict</Features>
+
+    <!--
+    CS0618 - Member is obsolete
+    -->
+    <WarningsNotAsErrors>618;AD0001</WarningsNotAsErrors>
+
+    <!--
+    CS1591 - Missing XML comment for publicly visible type or member 'Type_or_Member'
+    -->
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pacos.Tests.Unit" />
+  </ItemGroup>
+</Project>
