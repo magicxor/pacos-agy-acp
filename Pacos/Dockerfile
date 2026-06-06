@@ -48,6 +48,13 @@ COPY --from=adapter-builder /build/target/release/agy-acp /usr/local/bin/agy-acp
 # Run as a dedicated non-root user so agy can persist auth/state under HOME.
 RUN useradd -m -s /bin/bash agent
 ENV HOME=/home/agent
+
+# Pre-create the agy state directory owned by the runtime user. A named volume
+# mounted here (see deploy workflow) inherits this ownership on first creation,
+# so the non-root `agent` user can write to it. Without this the volume mount
+# point is created as root:root and agy fails with UnauthorizedAccessException.
+RUN mkdir -p /home/agent/.gemini && chown -R agent:agent /home/agent/.gemini
+
 WORKDIR /app
 COPY --from=publish --chown=agent:agent /app/publish .
 
