@@ -35,9 +35,11 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             docker pull ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }}
+            docker volume create pacos_agy_acp_${{ inputs.environment }}
             docker stop ${{ inputs.container_name }} || true
             docker rm ${{ inputs.container_name }} || true
             docker run -i -t -d --restart=always --name=${{ inputs.container_name }} \
+              -v pacos_agy_acp_${{ inputs.environment }}:/home/agent/.gemini \
               -e Pacos__TelegramBotApiKey='${{ secrets.PACOS__TELEGRAMBOTAPIKEY }}' \
               -e Pacos__AllowedChatIds__0='${{ vars.PACOS__ALLOWEDCHATIDS__0 }}' \
               -e Pacos__AllowedChatIds__1='${{ vars.PACOS__ALLOWEDCHATIDS__1 }}' \
