@@ -16,7 +16,7 @@ name: reusable test runner
 jobs:
   run_tests:
     name: run tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         dotnet: [
