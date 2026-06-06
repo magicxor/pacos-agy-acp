@@ -40,6 +40,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
     private readonly ILogger<AgySecurityPolicyHostedService> _logger;
     private readonly string _workspaceRoot;
     private readonly string _commandRuleMode;
+    private readonly string _chatModel;
 
     public AgySecurityPolicyHostedService(
         ILogger<AgySecurityPolicyHostedService> logger,
@@ -48,6 +49,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         _logger = logger;
         _workspaceRoot = NormalizePath(AcpSessionPool.ResolveRoot(options.Value));
         _commandRuleMode = (options.Value.AgyCommandRuleMode ?? "nolookahead").Trim().ToLowerInvariant();
+        _chatModel = options.Value.ChatModel;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -141,7 +143,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
 
         AppendCommandRules(allow, deny, deniedPaths);
 
-        var policy = new { model = "Gemini 3.5 Flash (High)", permissions = new { allow, deny }, toolPermission = "strict" };
+        var policy = new { model = _chatModel, permissions = new { allow, deny }, toolPermission = "strict" };
         return JsonSerializer.Serialize(policy, PolicyJsonOptions);
     }
 

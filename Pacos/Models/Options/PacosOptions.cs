@@ -13,6 +13,15 @@ public sealed class PacosOptions
     public required long[] AllowedChatIds { get; set; }
 
     /// <summary>
+    /// Name of the model written into the agy permission policy
+    /// (the <c>model</c> field of <c>settings.json</c>), e.g.
+    /// <c>Gemini 3.5 Flash (High)</c>.
+    /// </summary>
+    [Required]
+    [MinLength(1)]
+    public required string ChatModel { get; set; }
+
+    /// <summary>
     /// Executable used to spawn the agy-acp ACP adapter process.
     /// </summary>
     public string AgyAcpCommand { get; set; } = "agy-acp";

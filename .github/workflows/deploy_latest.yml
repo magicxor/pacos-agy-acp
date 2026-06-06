@@ -39,7 +39,6 @@ jobs:
             docker rm ${{ inputs.container_name }} || true
             docker run -i -t -d --restart=always --name=${{ inputs.container_name }} \
               -e Pacos__TelegramBotApiKey='${{ secrets.PACOS__TELEGRAMBOTAPIKEY }}' \
-              -e Pacos__GoogleCloudApiKey='${{ secrets.PACOS__GOOGLECLOUDAPIKEY }}' \
               -e Pacos__AllowedChatIds__0='${{ vars.PACOS__ALLOWEDCHATIDS__0 }}' \
               -e Pacos__AllowedChatIds__1='${{ vars.PACOS__ALLOWEDCHATIDS__1 }}' \
               -e Pacos__AllowedChatIds__2='${{ vars.PACOS__ALLOWEDCHATIDS__2 }}' \
@@ -50,10 +49,5 @@ jobs:
               -e Pacos__AllowedChatIds__7='${{ vars.PACOS__ALLOWEDCHATIDS__7 }}' \
               -e Pacos__AllowedChatIds__8='${{ vars.PACOS__ALLOWEDCHATIDS__8 }}' \
               -e Pacos__AllowedChatIds__9='${{ vars.PACOS__ALLOWEDCHATIDS__9 }}' \
-              -e Pacos__AllowedLanguageCodes__0='${{ vars.PACOS__ALLOWEDLANGUAGECODES__0 }}' \
-              -e Pacos__AllowedLanguageCodes__1='${{ vars.PACOS__ALLOWEDLANGUAGECODES__1 }}' \
               -e Pacos__ChatModel='${{ vars.PACOS__CHATMODEL }}' \
-              -e Pacos__ChatModelFallback='${{ vars.PACOS__CHATMODELFALLBACK }}' \
-              -e Pacos__ImageGenerationModel='${{ vars.PACOS__IMAGEGENERATIONMODEL }}' \
-              -e Pacos__ImageGenerationModelFallback='${{ vars.PACOS__IMAGEGENERATIONMODELFALLBACK }}' \
               ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }}
