@@ -1,0 +1,53 @@
+# documentation:
+# Environments -> Environment secrets: https://docs.github.com/en/actions/learn-github-actions/contexts#secrets-context
+# Environments -> Environment variables: https://docs.github.com/actions/learn-github-actions/contexts#vars-context
+# Secrets in reusable workflows: https://colinsalmcorner.com/consuming-environment-secrets-in-reusable-workflows/
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        description: environment to deploy to
+        required: true
+      container_name:
+        type: string
+        description: name for the docker container
+        required: true
+      tag:
+        type: string
+        description: tag for the docker image
+        required: true
+
+name: Deploy (reusable workflow)
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: executing remote ssh commands
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_CERT }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            docker pull ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }}
+            docker stop ${{ inputs.container_name }} || true
+            docker rm ${{ inputs.container_name }} || true
+            docker run -i -t -d --restart=always --name=${{ inputs.container_name }} \
+              -e Pacos__TelegramBotApiKey='${{ secrets.PACOS__TELEGRAMBOTAPIKEY }}' \
+              -e Pacos__AllowedChatIds__0='${{ vars.PACOS__ALLOWEDCHATIDS__0 }}' \
+              -e Pacos__AllowedChatIds__1='${{ vars.PACOS__ALLOWEDCHATIDS__1 }}' \
+              -e Pacos__AllowedChatIds__2='${{ vars.PACOS__ALLOWEDCHATIDS__2 }}' \
+              -e Pacos__AllowedChatIds__3='${{ vars.PACOS__ALLOWEDCHATIDS__3 }}' \
+              -e Pacos__AllowedChatIds__4='${{ vars.PACOS__ALLOWEDCHATIDS__4 }}' \
+              -e Pacos__AllowedChatIds__5='${{ vars.PACOS__ALLOWEDCHATIDS__5 }}' \
+              -e Pacos__AllowedChatIds__6='${{ vars.PACOS__ALLOWEDCHATIDS__6 }}' \
+              -e Pacos__AllowedChatIds__7='${{ vars.PACOS__ALLOWEDCHATIDS__7 }}' \
+              -e Pacos__AllowedChatIds__8='${{ vars.PACOS__ALLOWEDCHATIDS__8 }}' \
+              -e Pacos__AllowedChatIds__9='${{ vars.PACOS__ALLOWEDCHATIDS__9 }}' \
+              -e Pacos__ChatModel='${{ vars.PACOS__CHATMODEL }}' \
+              ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }}
