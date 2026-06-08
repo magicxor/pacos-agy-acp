@@ -26,7 +26,7 @@ RUN dotnet publish "./Pacos.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:U
 # --- Runtime image: .NET runtime + agy CLI + agy-acp adapter ---
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tini procps \
+    && apt-get install -y --no-install-recommends ca-certificates curl tini procps ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install agy (Google Antigravity CLI) — pinned to a known-good version
