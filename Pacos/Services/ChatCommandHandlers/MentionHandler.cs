@@ -176,6 +176,7 @@ public sealed class MentionHandler
             catch (Exception e)
             {
                 _logger.LogError(e, "Failed to convert video for {Author}. Error: {ErrorMessage}", author, e.Message);
+                media.FileBytes = null;
                 media.ErrorMessage = $"Video conversion failed: {e.Message}";
             }
         }
