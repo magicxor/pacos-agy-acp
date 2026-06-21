@@ -2,6 +2,7 @@
 # Environments -> Environment secrets: https://docs.github.com/en/actions/learn-github-actions/contexts#secrets-context
 # Environments -> Environment variables: https://docs.github.com/actions/learn-github-actions/contexts#vars-context
 # Secrets in reusable workflows: https://colinsalmcorner.com/consuming-environment-secrets-in-reusable-workflows/
+# Multi-platform native build + merge: https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
 on:
   workflow_call:
     inputs:
@@ -17,12 +18,21 @@ on:
 name: Build and push (reusable workflow)
 
 jobs:
-  build_and_push:
-    name: Build and push
-    runs-on: ubuntu-latest
+  build:
+    name: Build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-26.04
+            arch: amd64
+          - os: ubuntu-26.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
     environment: ${{ inputs.environment }}
     env:
       MAIN_PROJECT_DIR: Pacos
+      IMAGE: ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}
     steps:
       - uses: actions/checkout@v7
 
@@ -31,23 +41,74 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # https://github.com/docker/setup-qemu-action
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
       # https://github.com/docker/setup-buildx-action
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       # https://github.com/docker/build-push-action
-      - name: Build and push
+      # Each runner builds its own single-arch image natively and pushes it
+      # "by digest" (without a tag). The digest is then merged in the "merge" job.
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
-          push: true
           context: .
           file: ./${{ env.MAIN_PROJECT_DIR }}/Dockerfile
-          tags: |
-            ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }}
-          platforms: |
-            linux/amd64
-            linux/arm64
+          platforms: linux/${{ matrix.arch }}
+          # GitHub Actions Cache backend (type=gha): native to GitHub, fastest access,
+          # no external registry needed. Scoped per arch so the matrix jobs don't
+          # overwrite each other's cache. Limit: 10 GB per repo with LRU eviction.
+          cache-from: type=gha,scope=${{ vars.DOCKER_IMAGE }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ vars.DOCKER_IMAGE }}-${{ matrix.arch }},mode=max
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p ${{ runner.temp }}/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Merge manifests
+    needs:
+      - build
+    runs-on: ubuntu-26.04
+    environment: ${{ inputs.environment }}
+    env:
+      IMAGE: ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Combine all per-arch digests into a single multi-arch manifest list
+      # published under the requested tag. This is what makes the image multiarch.
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ env.IMAGE }}:${{ inputs.tag }} \
+            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ inputs.tag }}
