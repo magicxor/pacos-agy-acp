@@ -8,7 +8,6 @@ using Pacos.Services.Markdown;
 using Pacos.Services.VideoConversion;
 using Polly;
 using Telegram.Bot;
-using Telegram.Bot.Extensions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
@@ -143,7 +142,7 @@ public sealed class MentionHandler
 
         if (updateMessage.ReplyToMessage != null)
         {
-            repliedToMessageText = (updateMessage.ReplyToMessage.Text ?? updateMessage.ReplyToMessage.Caption ?? string.Empty).Trim();
+            // repliedToMessageText was already computed above (incl. Poll/RichMessage fallbacks) — reuse it here.
             if (!string.IsNullOrEmpty(repliedToMessageText))
             {
                 var repliedToAuthor = updateMessage.ReplyToMessage.From?.Username ??
