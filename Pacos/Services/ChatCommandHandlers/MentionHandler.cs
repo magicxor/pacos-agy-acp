@@ -91,6 +91,22 @@ public sealed class MentionHandler
         ));
     }
 
+    private static string? PollToText(Poll? poll)
+    {
+        if (poll is null)
+        {
+            return null;
+        }
+
+        var optionsText = string.Join(", ", poll.Options.Select((o, i) => $"{i}) {o.Text}"));
+        return $"Poll: {poll.Question} | Description: {poll.Description} | Options: {optionsText}";
+    }
+
+    private static string? RichMessageToText(RichMessage? richMessage)
+    {
+        return richMessage?.GetPlainText();
+    }
+
     public async Task HandleMentionAsync(
         ITelegramBotClient botClient,
         Message updateMessage,
@@ -104,7 +120,12 @@ public sealed class MentionHandler
         messageText = messageText.Substring(currentMention.Length).TrimStart(',', ' ', '.', '!', '?', ':', ';').Trim();
 
         // Check for replied-to message text
-        var repliedToMessageText = (updateMessage.ReplyToMessage?.Text ?? updateMessage.ReplyToMessage?.Caption ?? string.Empty).Trim();
+        var repliedToMessageText = (updateMessage.ReplyToMessage?.Text
+                                    ?? updateMessage.ReplyToMessage?.Caption
+                                    ?? PollToText(updateMessage.ReplyToMessage?.Poll)
+                                    ?? RichMessageToText(updateMessage.ReplyToMessage?.RichMessage)
+                                    ?? string.Empty)
+            .Trim();
 
         // Only exit early if both message and replied-to message are empty
         if (string.IsNullOrEmpty(messageText) && string.IsNullOrEmpty(repliedToMessageText))
@@ -121,7 +142,7 @@ public sealed class MentionHandler
 
         if (updateMessage.ReplyToMessage != null)
         {
-            repliedToMessageText = (updateMessage.ReplyToMessage.Text ?? updateMessage.ReplyToMessage.Caption ?? string.Empty).Trim();
+            // repliedToMessageText was already computed above (incl. Poll/RichMessage fallbacks) — reuse it here.
             if (!string.IsNullOrEmpty(repliedToMessageText))
             {
                 var repliedToAuthor = updateMessage.ReplyToMessage.From?.Username ??
