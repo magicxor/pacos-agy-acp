@@ -98,7 +98,7 @@ public sealed class MentionHandler
             return null;
         }
 
-        var optionsText = string.Join(", ", poll.Options.Select((o, i) => $"{i}) {o.Text}"));
+        var optionsText = string.Join(", ", poll.Options.Select((o, i) => $"{i + 1}) {o.Text}"));
         return $"Poll: {poll.Question} | Description: {poll.Description} | Options: {optionsText}";
     }
 
