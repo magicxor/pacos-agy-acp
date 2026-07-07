@@ -255,8 +255,10 @@ csharp_style_namespace_declarations = file_scoped:error
 dotnet_diagnostic.IDE0161.severity = error
 
 # IDE0290: Use primary constructor
+# reason: readonly fields are not supported in primary constructors
 csharp_style_prefer_primary_constructors = false
 dotnet_diagnostic.IDE0290.severity = none
+resharper_convert_to_primary_constructor_highlighting = none
 
 # CA1860: Prefer comparing 'Count' to 0 rather than using 'Any()', both for clarity and for performance
 dotnet_diagnostic.CA1860.severity = suggestion
