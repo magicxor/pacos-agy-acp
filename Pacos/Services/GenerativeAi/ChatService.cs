@@ -38,9 +38,7 @@ public sealed class ChatService : IAsyncDisposable
         long messageId,
         string authorName,
         string messageText,
-        byte[]? fileBytes = null,
-        string? fileMimeType = null,
-        string? fileName = null)
+        IReadOnlyList<ChatInputFile>? attachments = null)
     {
         var chatSemaphore = GetOrCreateChatSemaphore(chatId);
         await chatSemaphore.WaitAsync();
@@ -51,15 +49,19 @@ public sealed class ChatService : IAsyncDisposable
 
             using var workspace = TempWorkspace.Create(workingDir);
 
-            string? inputFilePath = null;
-            if (fileBytes is not null)
+            var inputFiles = new List<(string Path, ChatInputOrigin Origin)>();
+            if (attachments is not null)
             {
-                var resolvedName = ResolveFileName(fileName, fileMimeType, messageId);
-                inputFilePath = workspace.WriteInputFile(fileBytes, resolvedName);
-                _logger.LogInformation("Stored attached file for chat {ChatId} at {Path}", chatId, inputFilePath);
+                foreach (var attachment in attachments)
+                {
+                    var resolvedName = ResolveFileName(attachment.MimeType, messageId, attachment.Origin);
+                    var inputFilePath = workspace.WriteInputFile(attachment.Bytes, resolvedName);
+                    inputFiles.Add((inputFilePath, attachment.Origin));
+                    _logger.LogInformation("Stored attached file ({Origin}) for chat {ChatId} at {Path}", attachment.Origin, chatId, inputFilePath);
+                }
             }
 
-            var prompt = BuildPrompt(messageText, inputFilePath, workspace.OutputDirectory);
+            var prompt = BuildPrompt(messageText, inputFiles, workspace.OutputDirectory);
 
             var responseText = await _sessionPool.PromptAsync(chatId, prompt, CancellationToken.None);
 
@@ -93,13 +95,18 @@ public sealed class ChatService : IAsyncDisposable
         }
     }
 
-    private static string BuildPrompt(string messageText, string? inputFilePath, string outputDirectory)
+    private static string BuildPrompt(string messageText, IReadOnlyList<(string Path, ChatInputOrigin Origin)> inputFiles, string outputDirectory)
     {
         var builder = new StringBuilder();
 
-        if (inputFilePath is not null)
+        foreach (var (path, origin) in inputFiles)
         {
-            builder.Append("[SYSTEM: Пользователь прикрепил файл: ").Append(inputFilePath).AppendLine("]");
+            var label = origin switch
+            {
+                ChatInputOrigin.RepliedMessage => "Файл из сообщения, на которое отвечает пользователь",
+                _ => "Файл из сообщения пользователя",
+            };
+            builder.Append("[SYSTEM: ").Append(label).Append(": ").Append(path).AppendLine("]");
         }
 
         // Detailed file-delivery rules live in the steering file (GEMINI.md); here
@@ -144,15 +151,15 @@ public sealed class ChatService : IAsyncDisposable
                + $"Дата начала текущей сессии: {sessionStart}";
     }
 
-    private static string ResolveFileName(string? fileName, string? mimeType, long messageId)
+    private static string ResolveFileName(string? mimeType, long messageId, ChatInputOrigin origin)
     {
-        if (!string.IsNullOrWhiteSpace(fileName))
+        var prefix = origin switch
         {
-            return fileName;
-        }
-
+            ChatInputOrigin.RepliedMessage => "replied_message",
+            _ => "user_message",
+        };
         var extension = MimeToExtension(mimeType);
-        return $"attachment_{messageId.ToString(CultureInfo.InvariantCulture)}{extension}";
+        return $"{prefix}_{messageId.ToString(CultureInfo.InvariantCulture)}{extension}";
     }
 
     private static string MimeToExtension(string? mimeType) => mimeType?.ToLowerInvariant() switch

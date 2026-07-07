@@ -34,14 +34,13 @@ public sealed class DrawHandler
         var prompt = messageText.Substring(Const.DrawCommand.Length).Trim();
         _logger.LogInformation("Processing {Command} command from {Author} with prompt: {Prompt}", Const.DrawCommand, author, prompt);
 
-        // Locate an optional source image (current message, then replied-to message).
-        var sourceFileMetadata = GetImageMetadata(updateMessage);
-        if (sourceFileMetadata is null && updateMessage.ReplyToMessage is not null)
-        {
-            sourceFileMetadata = GetImageMetadata(updateMessage.ReplyToMessage);
-        }
+        // Locate optional source images: the user's own message and the post it replies to.
+        var userImageMetadata = GetImageMetadata(updateMessage);
+        var repliedImageMetadata = updateMessage.ReplyToMessage is not null
+            ? GetImageMetadata(updateMessage.ReplyToMessage)
+            : null;
 
-        if (string.IsNullOrWhiteSpace(prompt) && sourceFileMetadata is null)
+        if (string.IsNullOrWhiteSpace(prompt) && userImageMetadata is null && repliedImageMetadata is null)
         {
             await botClient.SendMessage(
                 chatId: updateMessage.Chat.Id,
@@ -51,25 +50,13 @@ public sealed class DrawHandler
             return;
         }
 
-        byte[]? sourceImageBytes = null;
-        if (sourceFileMetadata is not null)
-        {
-            var (imageBytes, downloadError) = await _telegramMediaService.DownloadMediaAsync(sourceFileMetadata, botClient, cancellationToken);
-            if (imageBytes is null)
-            {
-                await botClient.SendMessage(
-                    chatId: updateMessage.Chat.Id,
-                    text: $"Failed to download image: {downloadError}",
-                    replyParameters: new ReplyParameters { MessageId = updateMessage.MessageId },
-                    cancellationToken: cancellationToken);
-                return;
-            }
-
-            sourceImageBytes = imageBytes;
-        }
+        // Download both images best-effort; a single failed download must not block generation.
+        var attachments = new List<ChatInputFile>();
+        await AddImageAsync(userImageMetadata, ChatInputOrigin.UserMessage);
+        await AddImageAsync(repliedImageMetadata, ChatInputOrigin.RepliedMessage);
 
         var isGroupChat = updateMessage.Chat.Type is ChatType.Group or ChatType.Supergroup;
-        var drawMessage = BuildDrawMessage(author, prompt, sourceImageBytes is not null);
+        var drawMessage = BuildDrawMessage(author, prompt, attachments.Count);
 
         ChatResponseInfo response;
         try
@@ -80,8 +67,7 @@ public sealed class DrawHandler
                 updateMessage.Id,
                 author,
                 drawMessage,
-                sourceImageBytes,
-                sourceFileMetadata?.MimeType);
+                attachments);
         }
         catch (Exception e)
         {
@@ -142,13 +128,34 @@ public sealed class DrawHandler
         }
 
         _logger.LogInformation("Sent {Count} generated file(s) to {Author}", response.Files.Count, author);
+        return;
+
+        async Task AddImageAsync(TelegramFileMetadata? metadata, ChatInputOrigin origin)
+        {
+            if (metadata is null)
+            {
+                return;
+            }
+
+            var (imageBytes, downloadError) = await _telegramMediaService.DownloadMediaAsync(metadata, botClient, cancellationToken);
+            if (imageBytes is null)
+            {
+                _logger.LogWarning("Failed to download {Origin} image for {Author}: {Error}", origin, author, downloadError);
+                return;
+            }
+
+            attachments.Add(new ChatInputFile(imageBytes, metadata.MimeType, origin));
+        }
     }
 
-    private static string BuildDrawMessage(string author, string prompt, bool hasSourceImage)
+    private static string BuildDrawMessage(string author, string prompt, int imageCount)
     {
-        var basis = hasSourceImage
-            ? "Используя прикреплённое изображение как основу, сгенерируй новое изображение"
-            : "Сгенерируй изображение";
+        var basis = imageCount switch
+        {
+            0 => "Сгенерируй изображение",
+            1 => "Используя прикреплённое изображение как основу, сгенерируй новое изображение",
+            _ => "Используя прикреплённые изображения как основу, сгенерируй новое изображение",
+        };
 
         var request = string.IsNullOrWhiteSpace(prompt)
             ? $"{author}: {basis}."
