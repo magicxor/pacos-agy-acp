@@ -2,8 +2,8 @@ namespace Pacos.Models;
 
 public enum ChatInputOrigin
 {
-    UserMessage,     // медиа из сообщения самого пользователя
-    RepliedMessage,  // медиа из поста, на который он отвечает
+    UserMessage,     // media from the user's own message
+    RepliedMessage,  // media from the post the user is replying to
 }
 
 public sealed record ChatInputFile(byte[] Bytes, string MimeType, ChatInputOrigin Origin);
