@@ -3,7 +3,7 @@ using FFMpegCore.Enums;
 
 namespace Pacos.Services.VideoConversion;
 
-public class VideoConverter
+public sealed class VideoConverter
 {
     private readonly ILogger<VideoConverter> _logger;
 

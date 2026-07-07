@@ -45,6 +45,9 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # The bot spawns `agy-acp`, which in turn spawns `agy`; both must be on PATH.
 COPY --from=adapter-builder /build/target/release/agy-acp /usr/local/bin/agy-acp
 
+# Pin the agy CLI to the installed version; never let it self-update at runtime.
+ENV AGY_CLI_DISABLE_AUTO_UPDATE=true
+
 # Run as a dedicated non-root user so agy can persist auth/state under HOME.
 RUN useradd -m -s /bin/bash agent
 ENV HOME=/home/agent
