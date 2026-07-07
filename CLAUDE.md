@@ -1,0 +1,3 @@
+# Pacos
+
+@AGENTS.md

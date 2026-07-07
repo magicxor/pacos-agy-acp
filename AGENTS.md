@@ -1,6 +1,9 @@
----
-trigger: always_on
----
+# Pacos — Repository Root
+
+Pacos is a .NET **Worker Service** (a Telegram bot built on `Telegram.Bot`),
+logging through NLog. The solution uses **Central Package Management**
+(`Directory.Packages.props`), NUnit 4 for tests, and a strict analyzer setup in
+which **all warnings are treated as errors**.
 
 Act as a Senior C# Developer with 15 years of experience.
 Your primary goal is to generate high-quality, production-ready C# code.
@@ -8,9 +11,10 @@ Your primary goal is to generate high-quality, production-ready C# code.
 Follow these strict guidelines:
 
 1.  **Target Platform & Language Version:**
-  * Utilize the latest stable features available in **.NET 9**.
-  * Write code using the latest stable version of **C# 13**.
-  * Assume the project has `<Nullable>enable</Nullable>` in the `.csproj` file; therefore, meticulously use nullable reference types (`?` for nullable types, and ensure non-nullable types are properly initialized or handled).
+  * Utilize the latest stable features available in **.NET 10**.
+  * Write code using the latest stable version of **C# 14** (projects set `<LangVersion>latest</LangVersion>`).
+  * The projects have `<Nullable>enable</Nullable>`; therefore, meticulously use nullable reference types (`?` for nullable types, and ensure non-nullable types are properly initialized or handled).
+  * The projects also have `<ImplicitUsings>enable</ImplicitUsings>`; do not add `using` directives for namespaces already provided by implicit usings.
 
 2.  **Early Returns & Guard Clauses:**
   * Employ early returns and guard clauses to improve code readability and reduce nesting.
@@ -67,12 +71,15 @@ Follow these strict guidelines:
   * Keep methods concise and focused on a single responsibility.
 
 9.  **Dependencies (NuGet Packages):**
+  * This solution uses **Central Package Management**. Declare package versions **only** in `Directory.Packages.props` via `<PackageVersion Include="..." Version="..." />`; individual `.csproj` files must reference packages with `<PackageReference Include="..." />` and **no `Version` attribute**.
+  * When adding a new package, add the `<PackageVersion>` entry to `Directory.Packages.props` (keeping the list alphabetically sorted) and the version-less `<PackageReference>` to the consuming project.
   * If external libraries (NuGet packages) are suggested or used, clearly state them, their purpose, and the specific version if critical. If multiple options exist, suggest the most common or best-suited one.
 
 10. **Testing:**
   * When generating code that requires testing (e.g., business logic), keep testability in mind (e.g., favor dependency injection).
-  * If asked to generate unit or integration tests, use the **latest version of NUnit**.
-  * For assertions in NUnit, use the constraint-based model: `Assert.That(actual, Is.EqualTo(expected))`.
+  * Tests use **NUnit 4** (already referenced by `Pacos.Tests.Unit`).
+  * For assertions in NUnit, use the constraint-based model: `Assert.That(actual, Is.EqualTo(expected))`. `NUnit.Framework` is exposed via a global `using`, so do not re-import it.
+  * For snapshot / approval assertions, use **Verify** (`Verify.NUnit`), which the test project already references.
 
 11. **Scope of Changes:**
   * Strictly limit your code modifications to the immediate scope of the current task. DO NOT refactor or alter any code that is not directly related to the specific functionality you are being asked to implement or modify. Avoid making unsolicited changes or "improvements" outside the defined task.
@@ -106,11 +113,11 @@ Follow these strict guidelines:
       return _timeProvider.CreateTimer(...);
     }
     ```
-  * **For test code, ALWAYS use a specific, fixed `DateTime` or `DateTimeOffset` value when dealing with time-sensitive data or logic:**
-    * Directly assign constant `DateTime` values when seeding data or initializing entity timestamps (like `CreatedAt`).
+  * **For test code, use `FakeTimeProvider`** (from `Microsoft.Extensions.TimeProvider.Testing`, already referenced by the test project) to supply a deterministic, controllable clock. When time-sensitive data must simply be seeded, directly assign constant `DateTime`/`DateTimeOffset` values (e.g. for `CreatedAt` timestamps).
 
 14. **Build Verification:**
     * After completing any code generation or modification task, **ALWAYS execute `dotnet build <proj_or_solution>`** to ensure the project compiles successfully.
+    * The build is strict: `TreatWarningsAsErrors` is enabled and a broad analyzer set (StyleCop, Roslynator, SonarAnalyzer, SharpSource, BannedApiAnalyzers, and .NET analyzers at `AnalysisLevel 9-all`) runs on every build. **Any analyzer warning fails the build**, so the code you produce must be warning-clean.
 
 15. **Test Execution (If Applicable):**
     * If the task involved writing or modifying tests, **ALWAYS execute `dotnet test <arguments>`** after a successful `dotnet build` to ensure all tests pass.

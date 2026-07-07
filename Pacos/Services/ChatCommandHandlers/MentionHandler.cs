@@ -69,8 +69,7 @@ public sealed class MentionHandler
         long messageId,
         string authorName,
         string messageText,
-        byte[]? fileBytes = null,
-        string? fileMimeType = null)
+        IReadOnlyList<ChatInputFile> attachments)
     {
         var retryPolicy = Policy
             .Handle<TimeoutException>()
@@ -86,8 +85,7 @@ public sealed class MentionHandler
             messageId,
             authorName,
             messageText,
-            fileBytes,
-            fileMimeType
+            attachments
         ));
     }
 
@@ -179,32 +177,22 @@ public sealed class MentionHandler
             messageText,
             originalMessageLogInfo);
 
-        var fileMetadata = TelegramMediaService.GetFileMetadata(updateMessage) ?? TelegramMediaService.GetFileMetadata(updateMessage.ReplyToMessage);
-        _logger.LogInformation("Media info for message from {Author}: FileId={FileId}, MimeType={MimeType}",
-            author,
-            fileMetadata?.FileId,
-            fileMetadata?.MimeType);
-
-        var media = await _telegramMediaService.DownloadMediaAsync(fileMetadata, botClient, cancellationToken);
-
         const int maxFileSize = 10_000_000;
-        if (fileMetadata?.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true && media.FileBytes is not null)
+
+        // Collect media from both the user's own message and the post it replies to, so the
+        // agent receives both files. The order (user first, then replied-to) matches reading order.
+        var attachments = new List<ChatInputFile>();
+
+        var userAttachment = await DownloadAttachmentAsync(updateMessage, ChatInputOrigin.UserMessage);
+        if (userAttachment is not null)
         {
-            try
-            {
-                media.FileBytes = await _videoConverter.ConvertAsync(media.FileBytes, maxFileSize, cancellationToken);
-            }
-            catch (Exception e)
-            {
-                _logger.LogError(e, "Failed to convert video for {Author}. Error: {ErrorMessage}", author, e.Message);
-                media.FileBytes = null;
-                media.ErrorMessage = $"Video conversion failed: {e.Message}";
-            }
+            attachments.Add(userAttachment);
         }
 
-        if (fileMetadata?.FileId is not null && media.FileBytes is null && media.ErrorMessage is not null)
+        var repliedAttachment = await DownloadAttachmentAsync(updateMessage.ReplyToMessage, ChatInputOrigin.RepliedMessage);
+        if (repliedAttachment is not null)
         {
-            fullMessageToLlm = $"{fullMessageToLlm}\n\n[Media download error: {media.ErrorMessage}]";
+            attachments.Add(repliedAttachment);
         }
 
         ChatResponseInfo response;
@@ -217,8 +205,7 @@ public sealed class MentionHandler
                 updateMessage.Id,
                 author,
                 fullMessageToLlm,
-                media.FileBytes,
-                fileMetadata?.MimeType
+                attachments
             );
         }
         catch (Exception e)
@@ -264,6 +251,50 @@ public sealed class MentionHandler
         }
 
         return;
+
+        async Task<ChatInputFile?> DownloadAttachmentAsync(Message? sourceMessage, ChatInputOrigin origin)
+        {
+            var fileMetadata = TelegramMediaService.GetFileMetadata(sourceMessage);
+            if (fileMetadata is null)
+            {
+                return null;
+            }
+
+            _logger.LogInformation("Media info ({Origin}) for message from {Author}: FileId={FileId}, MimeType={MimeType}",
+                origin,
+                author,
+                fileMetadata.FileId,
+                fileMetadata.MimeType);
+
+            var media = await _telegramMediaService.DownloadMediaAsync(fileMetadata, botClient, cancellationToken);
+
+            if (fileMetadata.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) && media.FileBytes is not null)
+            {
+                try
+                {
+                    media.FileBytes = await _videoConverter.ConvertAsync(media.FileBytes, maxFileSize, cancellationToken);
+                }
+                catch (Exception e)
+                {
+                    _logger.LogError(e, "Failed to convert video for {Author}. Error: {ErrorMessage}", author, e.Message);
+                    media.FileBytes = null;
+                    media.ErrorMessage = $"Video conversion failed: {e.Message}";
+                }
+            }
+
+            if (media.FileBytes is null)
+            {
+                if (media.ErrorMessage is not null)
+                {
+                    // Surface the download/conversion error to the LLM (see rule 11 in Const.SystemPrompt).
+                    fullMessageToLlm = $"{fullMessageToLlm}\n\n[Media download error: {media.ErrorMessage}]";
+                }
+
+                return null;
+            }
+
+            return new ChatInputFile(media.FileBytes, fileMetadata.MimeType, origin);
+        }
 
         async Task SendReply(string text, ParseMode parseMode)
         {
