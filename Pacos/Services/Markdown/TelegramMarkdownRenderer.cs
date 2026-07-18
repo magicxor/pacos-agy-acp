@@ -11,6 +11,7 @@ namespace Pacos.Services.Markdown;
 
 public sealed class TelegramMarkdownRenderer
 {
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
     private static readonly FrozenSet<char> SpecialChars = new HashSet<char> { '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!' }.ToFrozenSet();
 
     private readonly StringBuilder _output = new();
@@ -437,12 +438,12 @@ public sealed class TelegramMarkdownRenderer
     {
         // Convert simple HTML tags to Telegram markdown
         string content = html.Lines.ToString() ?? string.Empty;
-        content = Regex.Replace(content, "<b>(.*?)</b>", "*$1*", RegexOptions.IgnoreCase);
-        content = Regex.Replace(content, "<i>(.*?)</i>", "_$1_", RegexOptions.IgnoreCase);
-        content = Regex.Replace(content, "<u>(.*?)</u>", "__$1__", RegexOptions.IgnoreCase);
-        content = Regex.Replace(content, "<s>(.*?)</s>", "~$1~", RegexOptions.IgnoreCase);
-        content = Regex.Replace(content, "<code>(.*?)</code>", "`$1`", RegexOptions.IgnoreCase);
-        content = Regex.Replace(content, "<[^>]+>", string.Empty, RegexOptions.IgnoreCase); // Remove other HTML tags
+        content = Regex.Replace(content, "<b>(.*?)</b>", "*$1*", RegexOptions.IgnoreCase, RegexTimeout);
+        content = Regex.Replace(content, "<i>(.*?)</i>", "_$1_", RegexOptions.IgnoreCase, RegexTimeout);
+        content = Regex.Replace(content, "<u>(.*?)</u>", "__$1__", RegexOptions.IgnoreCase, RegexTimeout);
+        content = Regex.Replace(content, "<s>(.*?)</s>", "~$1~", RegexOptions.IgnoreCase, RegexTimeout);
+        content = Regex.Replace(content, "<code>(.*?)</code>", "`$1`", RegexOptions.IgnoreCase, RegexTimeout);
+        content = Regex.Replace(content, "<[^>]+>", string.Empty, RegexOptions.IgnoreCase, RegexTimeout); // Remove other HTML tags
 
         _output.AppendLine(EscapeText(content));
         _output.AppendLine();
