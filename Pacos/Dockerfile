@@ -30,7 +30,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install agy (Google Antigravity CLI) — pinned to a known-good version
-ENV AGY_VERSION=1.1.4
+ENV AGY_VERSION=1.0.4
 RUN ARCH=$(dpkg --print-architecture) && \
     case "$ARCH" in \
       amd64) ASSET="agy_cli_linux_x64.tar.gz" ;; \

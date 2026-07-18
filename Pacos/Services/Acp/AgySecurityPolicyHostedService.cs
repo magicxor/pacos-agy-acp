@@ -109,9 +109,8 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         var gemini = $"{home}/.gemini";
         var cli = $"{gemini}/antigravity-cli";
 
-        List<string> allow = ["read_url(*)", "execute_url(*)", "mcp(*)"];
-        List<string> deny = [];
-        List<string> ask = [];
+        List<string> allow = ["read_url(*)", "execute_url(*)"];
+        List<string> deny = ["mcp(*)"];
 
         // Grants/denies both read_file and write_file for a path in one call —
         // the policy intent is that anything we let the agent write it may also
@@ -144,7 +143,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
 
         AppendCommandRules(allow, deny, deniedPaths, _workspaceRoot, $"{cli}/brain");
 
-        var policy = new { model = _chatModel, permissions = new { allow, ask, deny }, toolPermission = "strict", allowNonWorkspaceAccess = "on" };
+        var policy = new { model = _chatModel, permissions = new { allow, deny }, toolPermission = "strict" };
         return JsonSerializer.Serialize(policy, PolicyJsonOptions);
     }
 
