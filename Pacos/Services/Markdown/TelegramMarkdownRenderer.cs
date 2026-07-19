@@ -102,167 +102,37 @@ public sealed class TelegramMarkdownRenderer
 
     private void RenderList(ListBlock list)
     {
-        int index = GetOrderedStart(list);
-        foreach (var listItemBlock in list)
-        {
-            var item = (ListItemBlock)listItemBlock;
-            // Check if this is a task list item
-            bool isTaskList = false;
-            string checkboxText = string.Empty;
-            Inline? taskListContentStart = null;
-
-            if (!list.IsOrdered && item.Count > 0 && item[0] is ParagraphBlock firstPara && firstPara.Inline != null)
-            {
-                // Check if the first inline element is a TaskList
-                var firstInline = firstPara.Inline.FirstChild;
-                if (firstInline != null && firstInline.GetType().Name == "TaskList")
-                {
-                    isTaskList = true;
-
-                    // Get the task list state using reflection
-                    var checkedProperty = firstInline.GetType().GetProperty("Checked");
-                    bool isChecked = checkedProperty != null && checkedProperty.GetValue(firstInline) is bool checkedValue && checkedValue;
-
-                    checkboxText = isChecked ? @"\[x\] " : @"\[ \] ";
-
-                    taskListContentStart = firstInline.NextSibling;
-                }
-            }
-
-            if (list.IsOrdered)
-            {
-                _output.Append(CultureInfo.InvariantCulture, $"{index}\\. ");
-                index++;
-            }
-            else if (isTaskList)
-            {
-                _output.Append(CultureInfo.InvariantCulture, $"\\- {checkboxText}");
-            }
-            else
-            {
-                _output.Append("• ");
-            }
-
-            if (isTaskList)
-            {
-                // Render all inline elements after the checkbox
-                var current = taskListContentStart;
-                while (current != null)
-                {
-                    RenderInline(current);
-                    current = current.NextSibling;
-                }
-            }
-            else
-            {
-                // For regular lists, render all blocks normally
-                bool isFirstBlock = true;
-                bool previousBlockWasParagraph = false;
-                bool previousBlockWasNestedList = false;
-                foreach (var block in item)
-                {
-                    if (block is ParagraphBlock para)
-                    {
-                        if (!isFirstBlock)
-                        {
-                            _output.AppendLine();
-                            if (previousBlockWasParagraph || (previousBlockWasNestedList && list.IsLoose))
-                            {
-                                _output.AppendLine();
-                            }
-                        }
-                        if (para.Inline != null)
-                        {
-                            foreach (var inline in para.Inline)
-                            {
-                                RenderInline(inline);
-                            }
-                        }
-                        previousBlockWasParagraph = true;
-                        previousBlockWasNestedList = false;
-                    }
-                    else if (block is ListBlock nestedList)
-                    {
-                        // Add a line break before nested lists but no extra line
-                        if (!isFirstBlock)
-                        {
-                            _output.AppendLine();
-                        }
-                        var nestedRenderer = new TelegramMarkdownRenderer();
-                        string nestedContent = nestedRenderer.RenderListDirectly(nestedList, "  ");
-                        // Remove the trailing newline from nested content to avoid double spacing
-                        _output.Append(nestedContent.TrimEnd());
-                        previousBlockWasParagraph = false;
-                        previousBlockWasNestedList = true;
-                    }
-                    else
-                    {
-                        // Add line break before non-paragraph blocks (like quotes) if this is not the first block
-                        if (!isFirstBlock)
-                        {
-                            _output.AppendLine();
-                            if (previousBlockWasParagraph && block is CodeBlock && list.IsLoose)
-                            {
-                                _output.AppendLine();
-                            }
-                        }
-                        RenderBlock(block);
-                        // Remove trailing blank line added by block renderers (e.g. RenderQuote)
-                        // to avoid double spacing — the list item loop adds its own newline
-                        TrimTrailingBlankLine();
-                        previousBlockWasParagraph = false;
-                        previousBlockWasNestedList = false;
-                    }
-                    isFirstBlock = false;
-                }
-            }
-            EnsureTrailingLineBreaks(_output, list.IsLoose ? 2 : 1);
-        }
+        RenderListItems(list, string.Empty, _output);
         EnsureTrailingLineBreaks(_output, 2);
     }
 
     private string RenderListDirectly(ListBlock list, string indent)
     {
         var nestedOutput = new StringBuilder();
+        RenderListItems(list, indent, nestedOutput);
+        return nestedOutput.ToString();
+    }
+
+    private void RenderListItems(ListBlock list, string indent, StringBuilder output)
+    {
         int index = GetOrderedStart(list);
         foreach (var listItemBlock in list)
         {
             var item = (ListItemBlock)listItemBlock;
-            // Check if this is a task list item
-            bool isTaskList = false;
-            string checkboxText = string.Empty;
-            Inline? taskListContentStart = null;
-
-            if (!list.IsOrdered && item.Count > 0 && item[0] is ParagraphBlock firstPara && firstPara.Inline != null)
-            {
-                // Check if the first inline element is a TaskList
-                var firstInline = firstPara.Inline.FirstChild;
-                if (firstInline != null && firstInline.GetType().Name == "TaskList")
-                {
-                    isTaskList = true;
-
-                    // Get the task list state using reflection
-                    var checkedProperty = firstInline.GetType().GetProperty("Checked");
-                    bool isChecked = checkedProperty != null && checkedProperty.GetValue(firstInline) is bool checkedValue && checkedValue;
-
-                    checkboxText = isChecked ? @"\[x\] " : @"\[ \] ";
-
-                    taskListContentStart = firstInline.NextSibling;
-                }
-            }
+            bool isTaskList = TryGetTaskListCheckbox(list, item, out string checkboxText, out var taskListContentStart);
 
             if (list.IsOrdered)
             {
-                nestedOutput.Append(CultureInfo.InvariantCulture, $"{indent}{index}\\. ");
+                output.Append(CultureInfo.InvariantCulture, $"{indent}{index}\\. ");
                 index++;
             }
             else if (isTaskList)
             {
-                nestedOutput.Append(CultureInfo.InvariantCulture, $"{indent}\\- {checkboxText}");
+                output.Append(CultureInfo.InvariantCulture, $"{indent}\\- {checkboxText}");
             }
             else
             {
-                nestedOutput.Append(CultureInfo.InvariantCulture, $"{indent}• ");
+                output.Append(CultureInfo.InvariantCulture, $"{indent}• ");
             }
 
             if (isTaskList)
@@ -271,76 +141,122 @@ public sealed class TelegramMarkdownRenderer
                 var current = taskListContentStart;
                 while (current != null)
                 {
-                    var inlineRenderer = new TelegramMarkdownRenderer();
-                    inlineRenderer.RenderInline(current);
-                    nestedOutput.Append(inlineRenderer._output);
+                    output.Append(RenderInlineToString(current));
                     current = current.NextSibling;
                 }
             }
             else
             {
-                // For regular lists, render all blocks normally
-                bool isFirstBlock = true;
-                bool previousBlockWasParagraph = false;
-                bool previousBlockWasNestedList = false;
-                foreach (var block in item)
-                {
-                    if (block is ParagraphBlock para)
-                    {
-                        if (!isFirstBlock)
-                        {
-                            nestedOutput.AppendLine();
-                            if (previousBlockWasParagraph || (previousBlockWasNestedList && list.IsLoose))
-                            {
-                                nestedOutput.AppendLine();
-                            }
-                        }
-                        if (para.Inline != null)
-                        {
-                            foreach (var inline in para.Inline)
-                            {
-                                var inlineRenderer = new TelegramMarkdownRenderer();
-                                inlineRenderer.RenderInline(inline);
-                                nestedOutput.Append(inlineRenderer._output);
-                            }
-                        }
-                        previousBlockWasParagraph = true;
-                        previousBlockWasNestedList = false;
-                    }
-                    else if (block is ListBlock nestedList)
-                    {
-                        if (!isFirstBlock)
-                        {
-                            nestedOutput.AppendLine();
-                        }
-                        string nestedListContent = RenderListDirectly(nestedList, indent + "  ");
-                        nestedOutput.Append(nestedListContent.TrimEnd());
-                        previousBlockWasParagraph = false;
-                        previousBlockWasNestedList = true;
-                    }
-                    else
-                    {
-                        if (!isFirstBlock)
-                        {
-                            nestedOutput.AppendLine();
-                            if (previousBlockWasParagraph && block is CodeBlock && list.IsLoose)
-                            {
-                                nestedOutput.AppendLine();
-                            }
-                        }
-                        var blockRenderer = new TelegramMarkdownRenderer();
-                        blockRenderer.RenderBlock(block);
-                        blockRenderer.TrimTrailingBlankLine();
-                        nestedOutput.Append(blockRenderer._output.ToString().TrimEnd());
-                        previousBlockWasParagraph = false;
-                        previousBlockWasNestedList = false;
-                    }
-                    isFirstBlock = false;
-                }
+                RenderListItemBlocks(list, item, indent, output);
             }
-            EnsureTrailingLineBreaks(nestedOutput, list.IsLoose ? 2 : 1);
+            EnsureTrailingLineBreaks(output, list.IsLoose ? 2 : 1);
         }
-        return nestedOutput.ToString();
+    }
+
+    private void RenderListItemBlocks(ListBlock list, ListItemBlock item, string indent, StringBuilder output)
+    {
+        bool isFirstBlock = true;
+        bool previousBlockWasParagraph = false;
+        bool previousBlockWasNestedList = false;
+        foreach (var block in item)
+        {
+            if (block is ParagraphBlock para)
+            {
+                if (!isFirstBlock)
+                {
+                    output.AppendLine();
+                    if (previousBlockWasParagraph || (previousBlockWasNestedList && list.IsLoose))
+                    {
+                        output.AppendLine();
+                    }
+                }
+                if (para.Inline != null)
+                {
+                    foreach (var inline in para.Inline)
+                    {
+                        output.Append(RenderInlineToString(inline));
+                    }
+                }
+                previousBlockWasParagraph = true;
+                previousBlockWasNestedList = false;
+            }
+            else if (block is ListBlock nestedList)
+            {
+                // Add a line break before nested lists but no extra line;
+                // trim the trailing newline from nested content to avoid double spacing
+                if (!isFirstBlock)
+                {
+                    output.AppendLine();
+                }
+                output.Append(RenderListDirectly(nestedList, indent + "  ").TrimEnd());
+                previousBlockWasParagraph = false;
+                previousBlockWasNestedList = true;
+            }
+            else
+            {
+                // Add line break before non-paragraph blocks (like quotes) if this is not the first block
+                if (!isFirstBlock)
+                {
+                    output.AppendLine();
+                    if (previousBlockWasParagraph && block is CodeBlock && list.IsLoose)
+                    {
+                        output.AppendLine();
+                    }
+                }
+
+                // Remove trailing blank line added by block renderers (e.g. RenderQuote)
+                // to avoid double spacing — the list item loop adds its own newline.
+                // When buffering (nested lists), all trailing whitespace is trimmed instead.
+                if (ReferenceEquals(output, _output))
+                {
+                    RenderBlock(block);
+                    TrimTrailingBlankLine();
+                }
+                else
+                {
+                    var blockRenderer = new TelegramMarkdownRenderer();
+                    blockRenderer.RenderBlock(block);
+                    blockRenderer.TrimTrailingBlankLine();
+                    output.Append(blockRenderer._output.ToString().TrimEnd());
+                }
+                previousBlockWasParagraph = false;
+                previousBlockWasNestedList = false;
+            }
+            isFirstBlock = false;
+        }
+    }
+
+    private static bool TryGetTaskListCheckbox(ListBlock list, ListItemBlock item, out string checkboxText, out Inline? contentStart)
+    {
+        checkboxText = string.Empty;
+        contentStart = null;
+
+        if (list.IsOrdered || item.Count == 0 || item[0] is not ParagraphBlock firstPara || firstPara.Inline == null)
+        {
+            return false;
+        }
+
+        // Check if the first inline element is a TaskList
+        var firstInline = firstPara.Inline.FirstChild;
+        if (firstInline == null || firstInline.GetType().Name != "TaskList")
+        {
+            return false;
+        }
+
+        // Get the task list state using reflection
+        var checkedProperty = firstInline.GetType().GetProperty("Checked");
+        bool isChecked = checkedProperty != null && checkedProperty.GetValue(firstInline) is bool checkedValue && checkedValue;
+
+        checkboxText = isChecked ? @"\[x\] " : @"\[ \] ";
+        contentStart = firstInline.NextSibling;
+        return true;
+    }
+
+    private static string RenderInlineToString(Inline inline)
+    {
+        var renderer = new TelegramMarkdownRenderer();
+        renderer.RenderInline(inline);
+        return renderer._output.ToString();
     }
 
     private void RenderQuote(QuoteBlock quote)
