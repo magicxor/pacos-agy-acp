@@ -92,6 +92,31 @@ public static class StringExtensions
     }
 
     /// <summary>
+    /// Returns the length of the longest run of consecutive occurrences of the specified character.
+    /// </summary>
+    /// <param name="text">source string</param>
+    /// <param name="value">character to look for</param>
+    /// <returns>Length of the longest run, or 0 when the string is null or empty.</returns>
+    [Pure]
+    public static int LongestRunOf(this string? text, char value)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return 0;
+        }
+
+        var longest = 0;
+        var current = 0;
+        foreach (var c in text)
+        {
+            current = c == value ? current + 1 : 0;
+            longest = Math.Max(longest, current);
+        }
+
+        return longest;
+    }
+
+    /// <summary>
     /// Cuts the string to the specified length and appends "..." if it exceeds that length.
     /// </summary>
     /// <param name="text">source string</param>

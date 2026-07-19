@@ -30,7 +30,7 @@ public static class RichMessagePlainText
             case RichBlockParagraph b:      AppendTextLine(sb, b.Text); break;
             case RichBlockSectionHeading b: AppendTextLine(sb, b.Text); break;
             case RichBlockFooter b:         AppendTextLine(sb, b.Text); break;
-            case RichBlockPreformatted b:   AppendTextLine(sb, b.Text); break;
+            case RichBlockPreformatted b:   AppendPreformatted(sb, b); break;
             case RichBlockThinking b:       AppendTextLine(sb, b.Text); break;
             case RichBlockMathematicalExpression b: AppendStringLine(sb, b.Expression); break;
 
@@ -117,6 +117,27 @@ public static class RichMessagePlainText
             sb.Append(" --- |");
 
         sb.Append('\n');
+    }
+
+    // Code blocks keep their fencing and language so they stay recognizable in the LLM prompt
+    private static void AppendPreformatted(StringBuilder sb, RichBlockPreformatted block)
+    {
+        if (block.Text is null) return;
+
+        var codeSb = new StringBuilder();
+        AppendText(codeSb, block.Text);
+        var code = codeSb.ToString();
+
+        var fence = new string('`', Math.Max(3, code.LongestRunOf('`') + 1));
+        sb.Append(fence);
+        if (!string.IsNullOrEmpty(block.Language))
+            sb.Append(block.Language);
+
+        sb.Append('\n');
+        if (code.Length > 0)
+            sb.Append(code).Append('\n');
+
+        sb.Append(fence).Append('\n');
     }
 
     // The link target is kept in markdown syntax; without it the URL would be lost for the LLM prompt

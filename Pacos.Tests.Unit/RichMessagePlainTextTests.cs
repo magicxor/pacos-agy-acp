@@ -111,11 +111,37 @@ internal sealed class RichMessagePlainTextTests
     }
 
     [Test]
-    public void GetPlainText_WhenPreformatted_ShouldPreserveInnerNewlines()
+    public void GetPlainText_WhenPreformatted_ShouldRenderFencedBlockWithLanguage()
     {
         var code = string.Join('\n', "print('a')", "print('b')");
         var message = MessageOf(new RichBlockPreformatted { Text = Plain(code), Language = "python" });
-        Assert.That(message.GetPlainText(), Is.EqualTo(code));
+        var expected = string.Join('\n', "```python", "print('a')", "print('b')", "```");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenPreformattedWithoutLanguage_ShouldRenderBareFence()
+    {
+        var message = MessageOf(new RichBlockPreformatted { Text = Plain("plain code") });
+        var expected = string.Join('\n', "```", "plain code", "```");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenPreformattedContainsBacktickFence_ShouldUseLongerFence()
+    {
+        var code = string.Join('\n', "```", "nested fence", "```");
+        var message = MessageOf(new RichBlockPreformatted { Text = Plain(code) });
+        var expected = string.Join('\n', "````", "```", "nested fence", "```", "````");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenPreformattedTextIsNotSet_ShouldSkipIt()
+    {
+        var message = MessageOf(Paragraph("A"), new RichBlockPreformatted { Language = "python" }, Paragraph("B"));
+        var expected = string.Join('\n', "A", "B");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
     [Test]
@@ -524,7 +550,7 @@ internal sealed class RichMessagePlainTextTests
                 },
             ],
         });
-        var expected = string.Join('\n', "Первый абзац пункта", "код пункта");
+        var expected = string.Join('\n', "Первый абзац пункта", "```", "код пункта", "```");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 

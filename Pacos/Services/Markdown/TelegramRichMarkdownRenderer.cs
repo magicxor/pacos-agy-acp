@@ -6,6 +6,7 @@ using Markdig.Extensions.Tables;
 using Markdig.Extensions.TaskLists;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using Pacos.Extensions;
 using Pacos.Services.Markdown.Spoiler;
 
 namespace Pacos.Services.Markdown;
@@ -241,7 +242,7 @@ public sealed class TelegramRichMarkdownRenderer
     {
         // Markdig keeps the source line endings, so CRLF input would leak '\r' into the output
         var content = (code.Lines.ToString() ?? string.Empty).ReplaceLineEndings("\n");
-        var fence = new string('`', Math.Max(3, LongestBacktickRun(content) + 1));
+        var fence = new string('`', Math.Max(3, content.LongestRunOf('`') + 1));
 
         _output.Append(fence);
         if (code is FencedCodeBlock { Info.Length: > 0 } fenced)
@@ -499,7 +500,7 @@ public sealed class TelegramRichMarkdownRenderer
             content = content.Replace("|", "\\|", StringComparison.Ordinal);
         }
 
-        var fence = new string('`', LongestBacktickRun(content) + 1);
+        var fence = new string('`', content.LongestRunOf('`') + 1);
         var needsPadding = content.Length == 0
             || content[0] == '`'
             || content[^1] == '`'
@@ -555,18 +556,6 @@ public sealed class TelegramRichMarkdownRenderer
             .Select(static line => line.TrimEnd())
             .Where(static line => line.Length > 0);
         return string.Join(' ', lines).Trim();
-    }
-
-    private static int LongestBacktickRun(string text)
-    {
-        var longest = 0;
-        var current = 0;
-        foreach (var c in text)
-        {
-            current = c == '`' ? current + 1 : 0;
-            longest = Math.Max(longest, current);
-        }
-        return longest;
     }
 
     private static int GetOrderedStart(ListBlock list)
