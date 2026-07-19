@@ -341,7 +341,7 @@ internal sealed class RichMessagePlainTextTests
         {
             Blocks = [Paragraph("Первая строка цитаты"), Paragraph("Последняя строка цитаты")],
         });
-        var expected = string.Join('\n', "Первая строка цитаты", "Последняя строка цитаты");
+        var expected = string.Join('\n', "> Первая строка цитаты", "> Последняя строка цитаты");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -353,7 +353,7 @@ internal sealed class RichMessagePlainTextTests
             Blocks = [Paragraph("Цитата")],
             Credit = Plain("Автор"),
         });
-        var expected = string.Join('\n', "Цитата", "Автор");
+        var expected = string.Join('\n', "> Цитата", "> — Автор");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -371,7 +371,7 @@ internal sealed class RichMessagePlainTextTests
             Credit = Plain("Внешний автор"),
         };
         var message = MessageOf(outer);
-        var expected = string.Join('\n', "Внешняя", "Внутренняя", "Внутренний автор", "Внешний автор");
+        var expected = string.Join('\n', "> Внешняя", "> > Внутренняя", "> > — Внутренний автор", "> — Внешний автор");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -389,7 +389,7 @@ internal sealed class RichMessagePlainTextTests
                 },
             ],
         });
-        var expected = string.Join('\n', "Заголовок в цитате", "Пункт в цитате");
+        var expected = string.Join('\n', "> Заголовок в цитате", "> Пункт в цитате");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -575,7 +575,7 @@ internal sealed class RichMessagePlainTextTests
                 },
             ],
         });
-        var expected = string.Join('\n', "Сводка", "1. Глубокий пункт", "Автор цитаты");
+        var expected = string.Join('\n', "Сводка", "> 1. Глубокий пункт", "> — Автор цитаты");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -872,8 +872,8 @@ internal sealed class RichMessagePlainTextTests
             '\n',
             "Отчёт за Q1",
             "Вступление с подчёркиванием, выделением и x^2.",
-            "Цитата с жирным, зачёркнутым и спойлером",
-            "Классик",
+            "> Цитата с жирным, зачёркнутым и спойлером",
+            "> — Классик",
             "[x] Готово",
             "2. Пункт с кодом",
             "Метрики",

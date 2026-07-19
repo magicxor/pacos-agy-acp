@@ -40,10 +40,7 @@ public static class RichMessagePlainText
                 break;
 
             // container blocks (contain nested blocks)
-            case RichBlockBlockQuotation b:
-                AppendBlocks(sb, b.Blocks);
-                AppendTextLine(sb, b.Credit);
-                break;
+            case RichBlockBlockQuotation b: AppendBlockQuotation(sb, b); break;
             case RichBlockDetails b:
                 AppendTextLine(sb, b.Summary);
                 AppendBlocks(sb, b.Blocks);
@@ -117,6 +114,25 @@ public static class RichMessagePlainText
             sb.Append(" --- |");
 
         sb.Append('\n');
+    }
+
+    // Quotation lines get the markdown ">" marker so quoted words stay distinguishable in the LLM prompt;
+    // the credit gets an attribution dash
+    private static void AppendBlockQuotation(StringBuilder sb, RichBlockBlockQuotation quotation)
+    {
+        var innerSb = new StringBuilder();
+        AppendBlocks(innerSb, quotation.Blocks);
+        if (quotation.Credit is not null)
+        {
+            innerSb.Append("— ");
+            AppendTextLine(innerSb, quotation.Credit);
+        }
+
+        var inner = innerSb.ToString().TrimEnd('\n');
+        if (inner.Length == 0) return;
+
+        foreach (var line in inner.Split('\n'))
+            sb.Append(line.Length == 0 ? ">" : "> ").Append(line).Append('\n');
     }
 
     // Code blocks keep their fencing and language so they stay recognizable in the LLM prompt
