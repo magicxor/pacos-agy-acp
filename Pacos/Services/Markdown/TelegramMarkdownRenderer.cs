@@ -15,10 +15,12 @@ public sealed class TelegramMarkdownRenderer
     private static readonly FrozenSet<char> SpecialChars = new HashSet<char> { '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!' }.ToFrozenSet();
 
     private readonly StringBuilder _output = new();
+    private readonly HashSet<string> _activeMarkers = new(StringComparer.Ordinal);
 
     public string Render(MarkdownDocument document)
     {
         _output.Clear();
+        _activeMarkers.Clear();
         foreach (var block in document)
         {
             RenderBlock(block);
@@ -71,15 +73,17 @@ public sealed class TelegramMarkdownRenderer
     private void RenderHeading(HeadingBlock heading)
     {
         // Telegram doesn't support headers, so we'll make them bold
+        _activeMarkers.Add("*");
         _output.Append('*');
         if (heading.Inline != null)
         {
             foreach (var inline in heading.Inline)
             {
-                RenderInline(inline, true);
+                RenderInline(inline);
             }
         }
         _output.AppendLine("*");
+        _activeMarkers.Remove("*");
         _output.AppendLine();
     }
 
@@ -438,7 +442,7 @@ public sealed class TelegramMarkdownRenderer
         _output.AppendLine();
     }
 
-    private void RenderInline(Inline inline, bool insideFormatting = false)
+    private void RenderInline(Inline inline)
     {
         switch (inline)
         {
@@ -478,7 +482,7 @@ public sealed class TelegramMarkdownRenderer
                 {
                     foreach (var child in container)
                     {
-                        RenderInline(child, insideFormatting);
+                        RenderInline(child);
                     }
                 }
                 break;
@@ -518,14 +522,27 @@ public sealed class TelegramMarkdownRenderer
             marker = "~";
         }
 
-        if (!string.IsNullOrEmpty(marker))
+        if (string.IsNullOrEmpty(marker))
+        {
+            return;
+        }
+
+        // Telegram pairs identical markers greedily, so a nested same-style marker would invert the formatting
+        bool isNested = !_activeMarkers.Add(marker);
+        if (!isNested)
         {
             _output.Append(marker);
-            foreach (var child in emphasis)
-            {
-                RenderInline(child, true);
-            }
+        }
+
+        foreach (var child in emphasis)
+        {
+            RenderInline(child);
+        }
+
+        if (!isNested)
+        {
             _output.Append(marker);
+            _activeMarkers.Remove(marker);
         }
     }
 
@@ -538,7 +555,7 @@ public sealed class TelegramMarkdownRenderer
             // Use alt text from the image, or "Image" as fallback
             foreach (var child in link)
             {
-                RenderInline(child, true);
+                RenderInline(child);
             }
             // If no alt text was found, use a default
             if (link.FirstChild == null)
@@ -552,7 +569,7 @@ public sealed class TelegramMarkdownRenderer
             _output.Append('[');
             foreach (var child in link)
             {
-                RenderInline(child, true);
+                RenderInline(child);
             }
             _output.Append(CultureInfo.InvariantCulture, $"]({EscapeLinkUrl(link.Url ?? string.Empty)})");
         }

@@ -1,4 +1,4 @@
-﻿using Markdig;
+using Markdig;
 using Pacos.Extensions;
 using Pacos.Services;
 using Pacos.Services.Markdown;
@@ -48,6 +48,39 @@ internal sealed class TelegramMarkdownRendererTests
     {
         const string standardMarkdown = "AT&amp;T &lt;tag&gt; &copy; 2026";
         const string expectedTelegramMarkdown = @"AT&T <tag\> © 2026";
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenHeadingContainsBold_ShouldNotNestBoldMarkers()
+    {
+        const string standardMarkdown = "# Head **bold** tail";
+        const string expectedTelegramMarkdown = "*Head bold tail*";
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenBoldIsNestedInBold_ShouldEmitSingleBoldMarkers()
+    {
+        const string standardMarkdown = "**outer **inner** outer**";
+        const string expectedTelegramMarkdown = "*outer inner outer*";
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenItalicIsNestedInItalic_ShouldEmitSingleItalicMarkers()
+    {
+        const string standardMarkdown = "*outer *inner* outer*";
+        const string expectedTelegramMarkdown = "\u200B_\u200Bouter inner outer\u200B_\u200B";
 
         var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
         var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
