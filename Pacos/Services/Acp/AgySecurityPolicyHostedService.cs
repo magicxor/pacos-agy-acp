@@ -183,6 +183,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         //   subdirectory) so headless runs never hit the folder-trust gate.
         var policy = new
         {
+            enableTelemetry = false,
             model = _chatModel,
             agentMode = "accept-edits",
             toolPermission = "request-review",
