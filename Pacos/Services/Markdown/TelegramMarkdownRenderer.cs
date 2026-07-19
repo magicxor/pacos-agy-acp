@@ -469,7 +469,8 @@ public sealed class TelegramMarkdownRenderer
                 _output.AppendLine();
                 break;
             case HtmlInline html:
-                RenderHtmlInline(html);
+                // Tags are shown verbatim: LLMs writing HTML usually mean it to be read, not rendered
+                _output.Append(EscapeText(html.Tag));
                 break;
             case AutolinkInline autolink:
                 _output.Append(CultureInfo.InvariantCulture, $"[{EscapeText(autolink.Url)}]({EscapeLinkUrl(autolink.Url)})");
@@ -562,53 +563,6 @@ public sealed class TelegramMarkdownRenderer
                 RenderInline(child, true);
             }
             _output.Append(CultureInfo.InvariantCulture, $"]({EscapeLinkUrl(link.Url ?? string.Empty)})");
-        }
-    }
-
-    private void RenderHtmlInline(HtmlInline html)
-    {
-        string tag = html.Tag;
-        switch (tag.ToLowerInvariant())
-        {
-            case "b":
-            case "strong":
-                _output.Append('*');
-                break;
-            case "/b":
-            case "/strong":
-                _output.Append('*');
-                break;
-            case "i":
-            case "em":
-                _output.Append("\u200B_\u200B");
-                break;
-            case "/i":
-            case "/em":
-                _output.Append("\u200B_\u200B");
-                break;
-            case "u":
-                _output.Append("__");
-                break;
-            case "/u":
-                _output.Append("__");
-                break;
-            case "s":
-            case "strike":
-                _output.Append('~');
-                break;
-            case "/s":
-            case "/strike":
-                _output.Append('~');
-                break;
-            case "code":
-                _output.Append('`');
-                break;
-            case "/code":
-                _output.Append('`');
-                break;
-            default:
-                // Ignore other HTML tags
-                break;
         }
     }
 

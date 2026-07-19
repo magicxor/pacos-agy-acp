@@ -56,6 +56,7 @@ internal sealed class TelegramMarkdownRendererTests
     [TestCase("nested_lists.md")]
     [TestCase("code_blocks_list.md")]
     [TestCase("code_blocks.md")]
+    [TestCase("html_tags.md")]
     public async Task Render_ShouldReturnValidMarkdown(string fileName)
     {
         var standardMarkdown = await File.ReadAllTextAsync(Path.Combine("Files", fileName));
