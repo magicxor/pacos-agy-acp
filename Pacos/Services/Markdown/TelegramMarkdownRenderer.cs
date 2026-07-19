@@ -345,6 +345,12 @@ public sealed class TelegramMarkdownRenderer
 
     private void RenderQuote(QuoteBlock quote)
     {
+        // TODO: RemoveEmptyEntries below drops blank lines, so a multi-paragraph quote is glued
+        // into consecutive lines and the paragraph separation is lost. The proper fix is to emit
+        // a bare ">" separator line between paragraphs (that is how MarkdownV2 expresses a blank
+        // line inside a single quote) and to keep interior blank lines of nested blocks with the
+        // ">" prefix. Before fixing, verify with a live message that Bot API accepts a quote
+        // containing a bare ">" line and does not reject it or split the quote entity.
         foreach (var block in quote)
         {
             if (block is ParagraphBlock para)
