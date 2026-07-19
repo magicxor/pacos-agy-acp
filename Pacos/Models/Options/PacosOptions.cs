@@ -55,6 +55,8 @@ public sealed class PacosOptions
 
     /// <summary>
     /// Hard timeout (in seconds) for a single prompt round-trip to agy-acp.
+    /// Also forwarded to agy as <c>--print-timeout</c> so the CLI's own headless
+    /// timeout (default 5m) never undercuts this value.
     /// </summary>
     [Range(1, 3600)]
     public int PromptTimeoutSeconds { get; set; } = 300;

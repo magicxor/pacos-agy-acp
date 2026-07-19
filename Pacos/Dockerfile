@@ -30,7 +30,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install agy (Google Antigravity CLI) — pinned to a known-good version
-ENV AGY_VERSION=1.0.4
+ENV AGY_VERSION=1.1.4
 RUN ARCH=$(dpkg --print-architecture) && \
     case "$ARCH" in \
       amd64) ASSET="agy_cli_linux_x64.tar.gz" ;; \
@@ -61,9 +61,11 @@ RUN mkdir -p /home/agent/.gemini && chown -R agent:agent /home/agent/.gemini
 WORKDIR /app
 COPY --from=publish --chown=agent:agent /app/publish .
 
-# The agy security policy (deny all commands, restrict file access to the
-# per-chat workspace) is enforced in code at startup — see
-# AgySecurityPolicyHostedService — so it can never be forgotten or shadowed.
+# The agy security policy (allow only the cp file-delivery command, restrict
+# file access to the per-chat workspace and brain dir) is enforced in code at
+# startup — see AgySecurityPolicyHostedService — so it can never be forgotten
+# or shadowed. Headless agy >= 1.1.3 is fail-closed: everything outside the
+# allow list is auto-denied.
 
 USER agent
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
