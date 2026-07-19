@@ -86,10 +86,10 @@ Right | Left | Default | Center
 
 Note: pandoc also recognizes pipe tables of the following form, as can be produced by Emacs’ orgtbl\-mode:
 
- One  Two   
-\-\-\-\-\-\+\-\-\-\-\-\-\-
- my   table 
- is   nice  
+\| One \| Two   \|
+\|\-\-\-\-\-\+\-\-\-\-\-\-\-\|
+\| my  \| table \|
+\| is  \| nice  \|
 
 *Inline types in cells*
 

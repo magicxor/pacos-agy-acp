@@ -90,6 +90,10 @@
     <Content Include="Files\html_tags.md">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <None Remove="Files\rich_features.md" />
+    <Content Include="Files\rich_features.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

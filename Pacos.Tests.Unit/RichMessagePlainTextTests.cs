@@ -111,11 +111,37 @@ internal sealed class RichMessagePlainTextTests
     }
 
     [Test]
-    public void GetPlainText_WhenPreformatted_ShouldPreserveInnerNewlines()
+    public void GetPlainText_WhenPreformatted_ShouldRenderFencedBlockWithLanguage()
     {
         var code = string.Join('\n', "print('a')", "print('b')");
         var message = MessageOf(new RichBlockPreformatted { Text = Plain(code), Language = "python" });
-        Assert.That(message.GetPlainText(), Is.EqualTo(code));
+        var expected = string.Join('\n', "```python", "print('a')", "print('b')", "```");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenPreformattedWithoutLanguage_ShouldRenderBareFence()
+    {
+        var message = MessageOf(new RichBlockPreformatted { Text = Plain("plain code") });
+        var expected = string.Join('\n', "```", "plain code", "```");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenPreformattedContainsBacktickFence_ShouldUseLongerFence()
+    {
+        var code = string.Join('\n', "```", "nested fence", "```");
+        var message = MessageOf(new RichBlockPreformatted { Text = Plain(code) });
+        var expected = string.Join('\n', "````", "```", "nested fence", "```", "````");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenPreformattedTextIsNotSet_ShouldSkipIt()
+    {
+        var message = MessageOf(Paragraph("A"), new RichBlockPreformatted { Language = "python" }, Paragraph("B"));
+        var expected = string.Join('\n', "A", "B");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
     [Test]
@@ -191,7 +217,9 @@ internal sealed class RichMessagePlainTextTests
         yield return new TestCaseData(new RichTextMarked { Text = Plain("выделенный") }, "выделенный");
         yield return new TestCaseData(new RichTextSubscript { Text = Plain("нижний индекс") }, "нижний индекс");
         yield return new TestCaseData(new RichTextSuperscript { Text = Plain("верхний индекс") }, "верхний индекс");
-        yield return new TestCaseData(new RichTextUrl { Text = Plain("ссылка"), Url = "https://t.me/" }, "ссылка");
+        yield return new TestCaseData(new RichTextUrl { Text = Plain("ссылка"), Url = "https://t.me/" }, "[ссылка](https://t.me/)");
+        yield return new TestCaseData(new RichTextUrl { Text = Plain("https://t.me/"), Url = "https://t.me/" }, "https://t.me/");
+        yield return new TestCaseData(new RichTextUrl { Text = Plain("без адреса"), Url = string.Empty }, "без адреса");
         yield return new TestCaseData(new RichTextEmailAddress { Text = Plain("почта"), EmailAddress = "user@example.com" }, "почта");
         yield return new TestCaseData(new RichTextPhoneNumber { Text = Plain("телефон"), PhoneNumber = "+123456789" }, "телефон");
         yield return new TestCaseData(new RichTextBankCardNumber { Text = Plain("4242 4242 4242 4242"), BankCardNumber = "4242424242424242" }, "4242 4242 4242 4242");
@@ -313,7 +341,7 @@ internal sealed class RichMessagePlainTextTests
         {
             Blocks = [Paragraph("Первая строка цитаты"), Paragraph("Последняя строка цитаты")],
         });
-        var expected = string.Join('\n', "Первая строка цитаты", "Последняя строка цитаты");
+        var expected = string.Join('\n', "> Первая строка цитаты", "> Последняя строка цитаты");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -325,7 +353,7 @@ internal sealed class RichMessagePlainTextTests
             Blocks = [Paragraph("Цитата")],
             Credit = Plain("Автор"),
         });
-        var expected = string.Join('\n', "Цитата", "Автор");
+        var expected = string.Join('\n', "> Цитата", "> — Автор");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -343,7 +371,7 @@ internal sealed class RichMessagePlainTextTests
             Credit = Plain("Внешний автор"),
         };
         var message = MessageOf(outer);
-        var expected = string.Join('\n', "Внешняя", "Внутренняя", "Внутренний автор", "Внешний автор");
+        var expected = string.Join('\n', "> Внешняя", "> > Внутренняя", "> > — Внутренний автор", "> — Внешний автор");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -361,7 +389,7 @@ internal sealed class RichMessagePlainTextTests
                 },
             ],
         });
-        var expected = string.Join('\n', "Заголовок в цитате", "Пункт в цитате");
+        var expected = string.Join('\n', "> Заголовок в цитате", "> Пункт в цитате");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -522,7 +550,7 @@ internal sealed class RichMessagePlainTextTests
                 },
             ],
         });
-        var expected = string.Join('\n', "Первый абзац пункта", "код пункта");
+        var expected = string.Join('\n', "Первый абзац пункта", "```", "код пункта", "```");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -547,14 +575,14 @@ internal sealed class RichMessagePlainTextTests
                 },
             ],
         });
-        var expected = string.Join('\n', "Сводка", "1. Глубокий пункт", "Автор цитаты");
+        var expected = string.Join('\n', "Сводка", "> 1. Глубокий пункт", "> — Автор цитаты");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
     // ---------- tables ----------
 
     [Test]
-    public void GetPlainText_WhenTable_ShouldSeparateCellsWithTabsAndRowsWithNewlines()
+    public void GetPlainText_WhenTableWithHeader_ShouldRenderMarkdownTableWithDelimiterRow()
     {
         var message = MessageOf(new RichBlockTable
         {
@@ -564,7 +592,7 @@ internal sealed class RichMessagePlainTextTests
                 [Cell("Value 1"), Cell("Value 2")],
             ],
         });
-        var expected = string.Join('\n', "Header 1\tHeader 2", "Value 1\tValue 2");
+        var expected = string.Join('\n', "| Header 1 | Header 2 |", "| --- | --- |", "| Value 1 | Value 2 |");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -578,7 +606,18 @@ internal sealed class RichMessagePlainTextTests
             IsBordered = true,
             IsStriped = true,
         });
-        var expected = string.Join('\n', "Подпись таблицы", "A\tB");
+        var expected = string.Join('\n', "Подпись таблицы", "| A | B |");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenTableWithoutHeader_ShouldNotEmitDelimiterRow()
+    {
+        var message = MessageOf(new RichBlockTable
+        {
+            Cells = [[Cell("A"), Cell("B")], [Cell("C"), Cell("D")]],
+        });
+        var expected = string.Join('\n', "| A | B |", "| C | D |");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -589,7 +628,7 @@ internal sealed class RichMessagePlainTextTests
         {
             Cells = [[Cell("A"), new RichBlockTableCell(), Cell("C")]],
         });
-        Assert.That(message.GetPlainText(), Is.EqualTo("A\t\tC"));
+        Assert.That(message.GetPlainText(), Is.EqualTo("| A |  | C |"));
     }
 
     [Test]
@@ -600,7 +639,27 @@ internal sealed class RichMessagePlainTextTests
             Text = TextArray(Bold(Plain("42")), new RichTextSuperscript { Text = Plain(" мс") }),
         };
         var message = MessageOf(new RichBlockTable { Cells = [[cell]] });
-        Assert.That(message.GetPlainText(), Is.EqualTo("42 мс"));
+        Assert.That(message.GetPlainText(), Is.EqualTo("| 42 мс |"));
+    }
+
+    [Test]
+    public void GetPlainText_WhenTableCellContainsPipe_ShouldEscapeIt()
+    {
+        var message = MessageOf(new RichBlockTable
+        {
+            Cells = [[Cell("a|b"), Cell("C")]],
+        });
+        Assert.That(message.GetPlainText(), Is.EqualTo(@"| a\|b | C |"));
+    }
+
+    [Test]
+    public void GetPlainText_WhenTableCellContainsLineBreak_ShouldFlattenItToSingleLine()
+    {
+        var message = MessageOf(new RichBlockTable
+        {
+            Cells = [[Cell("первая\nвторая"), Cell("C")]],
+        });
+        Assert.That(message.GetPlainText(), Is.EqualTo("| первая вторая | C |"));
     }
 
     [Test]
@@ -813,13 +872,14 @@ internal sealed class RichMessagePlainTextTests
             '\n',
             "Отчёт за Q1",
             "Вступление с подчёркиванием, выделением и x^2.",
-            "Цитата с жирным, зачёркнутым и спойлером",
-            "Классик",
+            "> Цитата с жирным, зачёркнутым и спойлером",
+            "> — Классик",
             "[x] Готово",
             "2. Пункт с кодом",
             "Метрики",
-            "Метрика\tЗначение",
-            "Скорость\t42 мс",
+            "| Метрика | Значение |",
+            "| --- | --- |",
+            "| Скорость | 42 мс |",
             "Подробности с жирным",
             "Внутренний заголовок",
             "Скрытый пункт",

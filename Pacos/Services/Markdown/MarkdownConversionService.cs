@@ -8,6 +8,9 @@ public sealed class MarkdownConversionService
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
         .UseMdExtensions()
         .Build();
+    private static readonly MarkdownPipeline RichMarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseRichMdExtensions()
+        .Build();
     private readonly ILogger<MarkdownConversionService> _logger;
 
     public MarkdownConversionService(
@@ -21,5 +24,12 @@ public sealed class MarkdownConversionService
         _logger.LogDebug("Converting normal markdown to Telegram markdown: {NormalMarkdown}", normalMarkdown);
         var document = Markdig.Markdown.Parse(normalMarkdown, MarkdownPipeline);
         return new TelegramMarkdownRenderer().Render(document);
+    }
+
+    public string ConvertToTelegramRichMarkdown(string normalMarkdown)
+    {
+        _logger.LogDebug("Converting normal markdown to Telegram rich markdown: {NormalMarkdown}", normalMarkdown);
+        var document = Markdig.Markdown.Parse(normalMarkdown, RichMarkdownPipeline);
+        return new TelegramRichMarkdownRenderer().Render(document);
     }
 }

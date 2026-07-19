@@ -30,7 +30,7 @@ public static class RichMessagePlainText
             case RichBlockParagraph b:      AppendTextLine(sb, b.Text); break;
             case RichBlockSectionHeading b: AppendTextLine(sb, b.Text); break;
             case RichBlockFooter b:         AppendTextLine(sb, b.Text); break;
-            case RichBlockPreformatted b:   AppendTextLine(sb, b.Text); break;
+            case RichBlockPreformatted b:   AppendPreformatted(sb, b); break;
             case RichBlockThinking b:       AppendTextLine(sb, b.Text); break;
             case RichBlockMathematicalExpression b: AppendStringLine(sb, b.Expression); break;
 
@@ -40,10 +40,7 @@ public static class RichMessagePlainText
                 break;
 
             // container blocks (contain nested blocks)
-            case RichBlockBlockQuotation b:
-                AppendBlocks(sb, b.Blocks);
-                AppendTextLine(sb, b.Credit);
-                break;
+            case RichBlockBlockQuotation b: AppendBlockQuotation(sb, b); break;
             case RichBlockDetails b:
                 AppendTextLine(sb, b.Summary);
                 AppendBlocks(sb, b.Blocks);
@@ -54,8 +51,7 @@ public static class RichMessagePlainText
                 break;
             case RichBlockTable b:
                 AppendTextLine(sb, b.Caption);
-                foreach (var row in b.Cells)
-                    AppendTableRow(sb, row);
+                AppendTableRows(sb, b.Cells);
                 break;
 
             // media containers: no own text, but nested blocks and the caption may have some
@@ -89,15 +85,101 @@ public static class RichMessagePlainText
         AppendBlocks(sb, item.Blocks);
     }
 
+    // Tables are rendered in markdown pipe format so that downstream consumers (the LLM prompt)
+    // can still recognize the tabular structure and the header row
+    private static void AppendTableRows(StringBuilder sb, RichBlockTableCell[][] rows)
+    {
+        for (var i = 0; i < rows.Length; i++)
+        {
+            AppendTableRow(sb, rows[i]);
+
+            if (i == 0 && Array.Exists(rows[i], static cell => cell.IsHeader))
+                AppendTableDelimiterRow(sb, rows[i].Length);
+        }
+    }
+
     private static void AppendTableRow(StringBuilder sb, RichBlockTableCell[] row)
     {
-        for (var i = 0; i < row.Length; i++)
-        {
-            if (i > 0) sb.Append('\t');
-            AppendText(sb, row[i].Text);
-        }
+        sb.Append('|');
+        foreach (var cell in row)
+            sb.Append(' ').Append(GetTableCellText(cell)).Append(" |");
 
         sb.Append('\n');
+    }
+
+    private static void AppendTableDelimiterRow(StringBuilder sb, int columnCount)
+    {
+        sb.Append('|');
+        for (var i = 0; i < columnCount; i++)
+            sb.Append(" --- |");
+
+        sb.Append('\n');
+    }
+
+    // Quotation lines get the markdown ">" marker so quoted words stay distinguishable in the LLM prompt;
+    // the credit gets an attribution dash
+    private static void AppendBlockQuotation(StringBuilder sb, RichBlockBlockQuotation quotation)
+    {
+        var innerSb = new StringBuilder();
+        AppendBlocks(innerSb, quotation.Blocks);
+        if (quotation.Credit is not null)
+        {
+            innerSb.Append("— ");
+            AppendTextLine(innerSb, quotation.Credit);
+        }
+
+        var inner = innerSb.ToString().TrimEnd('\n');
+        if (inner.Length == 0) return;
+
+        foreach (var line in inner.Split('\n'))
+            sb.Append(line.Length == 0 ? ">" : "> ").Append(line).Append('\n');
+    }
+
+    // Code blocks keep their fencing and language so they stay recognizable in the LLM prompt
+    private static void AppendPreformatted(StringBuilder sb, RichBlockPreformatted block)
+    {
+        if (block.Text is null) return;
+
+        var codeSb = new StringBuilder();
+        AppendText(codeSb, block.Text);
+        var code = codeSb.ToString();
+
+        var fence = new string('`', Math.Max(3, code.LongestRunOf('`') + 1));
+        sb.Append(fence);
+        if (!string.IsNullOrEmpty(block.Language))
+            sb.Append(block.Language);
+
+        sb.Append('\n');
+        if (code.Length > 0)
+            sb.Append(code).Append('\n');
+
+        sb.Append(fence).Append('\n');
+    }
+
+    // The link target is kept in markdown syntax; without it the URL would be lost for the LLM prompt
+    private static void AppendUrl(StringBuilder sb, RichTextUrl url)
+    {
+        var textSb = new StringBuilder();
+        AppendText(textSb, url.Text);
+        var text = textSb.ToString();
+
+        if (string.IsNullOrEmpty(url.Url) || text == url.Url)
+        {
+            sb.Append(text);
+            return;
+        }
+
+        sb.Append('[').Append(text).Append("](").Append(url.Url).Append(')');
+    }
+
+    private static string GetTableCellText(RichBlockTableCell cell)
+    {
+        var sb = new StringBuilder();
+        AppendText(sb, cell.Text);
+        return sb.ToString()
+            .ReplaceLineEndings(" ")
+            .Replace("|", "\\|", StringComparison.Ordinal)
+            .Trim();
     }
 
     private static void AppendCaption(StringBuilder sb, RichBlockCaption? caption)
@@ -140,7 +222,7 @@ public static class RichMessagePlainText
             case RichTextStrikethrough t:  AppendText(sb, t.Text); break;
             case RichTextSpoiler t:        AppendText(sb, t.Text); break;
             case RichTextCode t:           AppendText(sb, t.Text); break;
-            case RichTextUrl t:            AppendText(sb, t.Text); break;
+            case RichTextUrl t:            AppendUrl(sb, t); break;
             case RichTextEmailAddress t:   AppendText(sb, t.Text); break;
             case RichTextPhoneNumber t:    AppendText(sb, t.Text); break;
             case RichTextBankCardNumber t: AppendText(sb, t.Text); break;
