@@ -104,6 +104,20 @@ internal sealed class TelegramMarkdownRendererTests
     }
 
     [Test]
+    public void Render_WhenTaskListItem_ShouldHaveSingleSpaceAfterCheckbox()
+    {
+        var standardMarkdown = string.Join('\n', "- [ ] todo", "- [x] done");
+        var expectedTelegramMarkdown = string.Join(
+            Environment.NewLine,
+            @"\- \[ \] todo",
+            @"\- \[x\] done");
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
     public void Render_WhenOrderedListContinuesAfterParagraph_ShouldPreserveNumbering()
     {
         var standardMarkdown = string.Join('\n', "1. one", "2. two", string.Empty, "interruption", string.Empty, "3. three", "4. four");

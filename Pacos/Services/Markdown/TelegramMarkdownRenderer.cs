@@ -138,11 +138,15 @@ public sealed class TelegramMarkdownRenderer
 
             if (isTaskList)
             {
-                // Render all inline elements after the checkbox
+                // Render all inline elements after the checkbox; the source text after "[x]" starts
+                // with its own space, so the first piece is trimmed to keep the single checkbox space
                 var current = taskListContentStart;
+                bool isFirstInline = true;
                 while (current != null)
                 {
-                    output.Append(RenderInlineToString(current));
+                    string inlineText = RenderInlineToString(current);
+                    output.Append(isFirstInline ? inlineText.TrimStart(' ') : inlineText);
+                    isFirstInline = false;
                     current = current.NextSibling;
                 }
             }
