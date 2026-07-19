@@ -84,3 +84,9 @@ Note: pandoc also recognizes pipe tables of the following form, as can be produc
 |-----+-------|
 | my  | table |
 | is  | nice  |
+
+## Inline types in cells
+
+| Company | Link | Note |
+|---------|------|------|
+| AT&amp;T | https://example.com/page | a<br>b |

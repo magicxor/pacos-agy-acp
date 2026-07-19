@@ -674,6 +674,14 @@ public sealed class TelegramMarkdownRenderer
                 return linkResult.ToString();
             case CodeInline code:
                 return code.Content;
+            case HtmlEntityInline entity:
+                return entity.Transcoded.ToString();
+            case AutolinkInline autolink:
+                return autolink.Url;
+            case HtmlInline html:
+                return html.Tag;
+            case SpoilerInline spoiler:
+                return spoiler.Content.ToString();
             default:
                 return string.Empty;
         }

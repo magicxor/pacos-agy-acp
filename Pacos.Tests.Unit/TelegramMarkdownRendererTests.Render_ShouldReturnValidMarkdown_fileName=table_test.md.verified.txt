@@ -89,4 +89,11 @@ Note: pandoc also recognizes pipe tables of the following form, as can be produc
  One  Two   
 \-\-\-\-\-\+\-\-\-\-\-\-\-
  my   table 
- is   nice
+ is   nice  
+
+*Inline types in cells*
+
+```
+Company | Link | Note
+AT&T | https://example.com/page | a<br>b
+```
