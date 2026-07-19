@@ -472,6 +472,9 @@ public sealed class TelegramMarkdownRenderer
                 // Tags are shown verbatim: LLMs writing HTML usually mean it to be read, not rendered
                 _output.Append(EscapeText(html.Tag));
                 break;
+            case HtmlEntityInline entity:
+                _output.Append(EscapeText(entity.Transcoded.ToString()));
+                break;
             case AutolinkInline autolink:
                 _output.Append(CultureInfo.InvariantCulture, $"[{EscapeText(autolink.Url)}]({EscapeLinkUrl(autolink.Url)})");
                 break;

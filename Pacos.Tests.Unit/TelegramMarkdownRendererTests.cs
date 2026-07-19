@@ -44,6 +44,17 @@ internal sealed class TelegramMarkdownRendererTests
     }
 
     [Test]
+    public void Render_WhenDocumentContainsHtmlEntities_ShouldRenderTranscodedText()
+    {
+        const string standardMarkdown = "AT&amp;T &lt;tag&gt; &copy; 2026";
+        const string expectedTelegramMarkdown = @"AT&T <tag\> © 2026";
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
     [TestCase("checkbox_test.md")]
     [TestCase("image_test.md")]
     [TestCase("table_test.md")]
