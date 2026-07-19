@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Markdig.Extensions.Tables;
+using Markdig.Extensions.TaskLists;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Pacos.Services.Markdown.Spoiler;
@@ -236,19 +237,13 @@ public sealed class TelegramMarkdownRenderer
             return false;
         }
 
-        // Check if the first inline element is a TaskList
-        var firstInline = firstPara.Inline.FirstChild;
-        if (firstInline == null || firstInline.GetType().Name != "TaskList")
+        if (firstPara.Inline.FirstChild is not TaskList taskList)
         {
             return false;
         }
 
-        // Get the task list state using reflection
-        var checkedProperty = firstInline.GetType().GetProperty("Checked");
-        bool isChecked = checkedProperty != null && checkedProperty.GetValue(firstInline) is bool checkedValue && checkedValue;
-
-        checkboxText = isChecked ? @"\[x\] " : @"\[ \] ";
-        contentStart = firstInline.NextSibling;
+        checkboxText = taskList.Checked ? @"\[x\] " : @"\[ \] ";
+        contentStart = taskList.NextSibling;
         return true;
     }
 
