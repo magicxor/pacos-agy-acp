@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using Markdig.Extensions.Alerts;
 using Markdig.Extensions.Tables;
 using Markdig.Extensions.TaskLists;
 using Markdig.Syntax;
@@ -41,6 +42,9 @@ public sealed class TelegramMarkdownRenderer
                 break;
             case ListBlock list:
                 RenderList(list);
+                break;
+            case AlertBlock alert:
+                RenderAlert(alert);
                 break;
             case QuoteBlock quote:
                 RenderQuote(quote);
@@ -256,6 +260,27 @@ public sealed class TelegramMarkdownRenderer
         var renderer = new TelegramMarkdownRenderer();
         renderer.RenderInline(inline);
         return renderer._output.ToString();
+    }
+
+    private void RenderAlert(AlertBlock alert)
+    {
+        string kind = alert.Kind.ToString();
+        (string emoji, string label) = kind.ToUpperInvariant() switch
+        {
+            "NOTE" => ("ℹ️", "Note"),
+            "TIP" => ("💡", "Tip"),
+            "IMPORTANT" => ("❗", "Important"),
+            "WARNING" => ("⚠️", "Warning"),
+            "CAUTION" => ("🛑", "Caution"),
+            _ => (string.Empty, kind),
+        };
+
+        string labelLine = string.IsNullOrEmpty(emoji) ? label : $"{emoji} {label}";
+        if (labelLine.Length > 0)
+        {
+            _output.AppendLine(CultureInfo.InvariantCulture, $">*{EscapeText(labelLine)}*");
+        }
+        RenderQuote(alert);
     }
 
     private void RenderQuote(QuoteBlock quote)

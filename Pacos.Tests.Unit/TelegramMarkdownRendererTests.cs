@@ -104,6 +104,25 @@ internal sealed class TelegramMarkdownRendererTests
     }
 
     [Test]
+    [TestCase("NOTE", "ℹ️ Note")]
+    [TestCase("TIP", "💡 Tip")]
+    [TestCase("IMPORTANT", "❗ Important")]
+    [TestCase("WARNING", "⚠️ Warning")]
+    [TestCase("CAUTION", "🛑 Caution")]
+    public void Render_WhenAlertBlock_ShouldRenderLabelInsideQuote(string kind, string expectedLabel)
+    {
+        var standardMarkdown = string.Join('\n', $"> [!{kind}]", "> Useful info.");
+        var expectedTelegramMarkdown = string.Join(
+            Environment.NewLine,
+            $">*{expectedLabel}*",
+            @">Useful info\.");
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
     public void Render_WhenTaskListItem_ShouldHaveSingleSpaceAfterCheckbox()
     {
         var standardMarkdown = string.Join('\n', "- [ ] todo", "- [x] done");
