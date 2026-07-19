@@ -554,7 +554,7 @@ internal sealed class RichMessagePlainTextTests
     // ---------- tables ----------
 
     [Test]
-    public void GetPlainText_WhenTable_ShouldSeparateCellsWithTabsAndRowsWithNewlines()
+    public void GetPlainText_WhenTableWithHeader_ShouldRenderMarkdownTableWithDelimiterRow()
     {
         var message = MessageOf(new RichBlockTable
         {
@@ -564,7 +564,7 @@ internal sealed class RichMessagePlainTextTests
                 [Cell("Value 1"), Cell("Value 2")],
             ],
         });
-        var expected = string.Join('\n', "Header 1\tHeader 2", "Value 1\tValue 2");
+        var expected = string.Join('\n', "| Header 1 | Header 2 |", "| --- | --- |", "| Value 1 | Value 2 |");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -578,7 +578,18 @@ internal sealed class RichMessagePlainTextTests
             IsBordered = true,
             IsStriped = true,
         });
-        var expected = string.Join('\n', "Подпись таблицы", "A\tB");
+        var expected = string.Join('\n', "Подпись таблицы", "| A | B |");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenTableWithoutHeader_ShouldNotEmitDelimiterRow()
+    {
+        var message = MessageOf(new RichBlockTable
+        {
+            Cells = [[Cell("A"), Cell("B")], [Cell("C"), Cell("D")]],
+        });
+        var expected = string.Join('\n', "| A | B |", "| C | D |");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -589,7 +600,7 @@ internal sealed class RichMessagePlainTextTests
         {
             Cells = [[Cell("A"), new RichBlockTableCell(), Cell("C")]],
         });
-        Assert.That(message.GetPlainText(), Is.EqualTo("A\t\tC"));
+        Assert.That(message.GetPlainText(), Is.EqualTo("| A |  | C |"));
     }
 
     [Test]
@@ -600,7 +611,27 @@ internal sealed class RichMessagePlainTextTests
             Text = TextArray(Bold(Plain("42")), new RichTextSuperscript { Text = Plain(" мс") }),
         };
         var message = MessageOf(new RichBlockTable { Cells = [[cell]] });
-        Assert.That(message.GetPlainText(), Is.EqualTo("42 мс"));
+        Assert.That(message.GetPlainText(), Is.EqualTo("| 42 мс |"));
+    }
+
+    [Test]
+    public void GetPlainText_WhenTableCellContainsPipe_ShouldEscapeIt()
+    {
+        var message = MessageOf(new RichBlockTable
+        {
+            Cells = [[Cell("a|b"), Cell("C")]],
+        });
+        Assert.That(message.GetPlainText(), Is.EqualTo(@"| a\|b | C |"));
+    }
+
+    [Test]
+    public void GetPlainText_WhenTableCellContainsLineBreak_ShouldFlattenItToSingleLine()
+    {
+        var message = MessageOf(new RichBlockTable
+        {
+            Cells = [[Cell("первая\nвторая"), Cell("C")]],
+        });
+        Assert.That(message.GetPlainText(), Is.EqualTo("| первая вторая | C |"));
     }
 
     [Test]
@@ -818,8 +849,9 @@ internal sealed class RichMessagePlainTextTests
             "[x] Готово",
             "2. Пункт с кодом",
             "Метрики",
-            "Метрика\tЗначение",
-            "Скорость\t42 мс",
+            "| Метрика | Значение |",
+            "| --- | --- |",
+            "| Скорость | 42 мс |",
             "Подробности с жирным",
             "Внутренний заголовок",
             "Скрытый пункт",

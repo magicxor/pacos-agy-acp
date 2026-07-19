@@ -54,8 +54,7 @@ public static class RichMessagePlainText
                 break;
             case RichBlockTable b:
                 AppendTextLine(sb, b.Caption);
-                foreach (var row in b.Cells)
-                    AppendTableRow(sb, row);
+                AppendTableRows(sb, b.Cells);
                 break;
 
             // media containers: no own text, but nested blocks and the caption may have some
@@ -89,15 +88,45 @@ public static class RichMessagePlainText
         AppendBlocks(sb, item.Blocks);
     }
 
+    // Tables are rendered in markdown pipe format so that downstream consumers (the LLM prompt)
+    // can still recognize the tabular structure and the header row
+    private static void AppendTableRows(StringBuilder sb, RichBlockTableCell[][] rows)
+    {
+        for (var i = 0; i < rows.Length; i++)
+        {
+            AppendTableRow(sb, rows[i]);
+
+            if (i == 0 && Array.Exists(rows[i], static cell => cell.IsHeader))
+                AppendTableDelimiterRow(sb, rows[i].Length);
+        }
+    }
+
     private static void AppendTableRow(StringBuilder sb, RichBlockTableCell[] row)
     {
-        for (var i = 0; i < row.Length; i++)
-        {
-            if (i > 0) sb.Append('\t');
-            AppendText(sb, row[i].Text);
-        }
+        sb.Append('|');
+        foreach (var cell in row)
+            sb.Append(' ').Append(GetTableCellText(cell)).Append(" |");
 
         sb.Append('\n');
+    }
+
+    private static void AppendTableDelimiterRow(StringBuilder sb, int columnCount)
+    {
+        sb.Append('|');
+        for (var i = 0; i < columnCount; i++)
+            sb.Append(" --- |");
+
+        sb.Append('\n');
+    }
+
+    private static string GetTableCellText(RichBlockTableCell cell)
+    {
+        var sb = new StringBuilder();
+        AppendText(sb, cell.Text);
+        return sb.ToString()
+            .ReplaceLineEndings(" ")
+            .Replace("|", "\\|", StringComparison.Ordinal)
+            .Trim();
     }
 
     private static void AppendCaption(StringBuilder sb, RichBlockCaption? caption)
