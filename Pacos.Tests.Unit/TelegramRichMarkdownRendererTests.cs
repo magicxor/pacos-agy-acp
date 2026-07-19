@@ -194,10 +194,37 @@ internal sealed class TelegramRichMarkdownRendererTests
     }
 
     [Test]
-    public void Render_WhenSoftLineBreak_ShouldEmitHardLineBreak()
+    public void Render_WhenSoftLineBreak_ShouldEmitBackslashHardLineBreak()
     {
         const string standardMarkdown = "line1\nline2";
-        const string expectedRichMarkdown = "line1  \nline2";
+        const string expectedRichMarkdown = "line1\\\nline2";
+
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenSetextHeadingSpansMultipleLines_ShouldCollapseItToSingleLine()
+    {
+        var standardMarkdown = string.Join('\n', "first", "second", "=====");
+        const string expectedRichMarkdown = "# first second";
+
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenFootnoteDefinitionSpansMultipleLines_ShouldCollapseItToSingleLine()
+    {
+        var standardMarkdown = string.Join(
+            '\n',
+            "Ref[^1].",
+            string.Empty,
+            "[^1]: line one",
+            "    line two");
+        var expectedRichMarkdown = string.Join(
+            '\n',
+            "Ref[^1].",
+            string.Empty,
+            "[^1]: line one line two");
 
         Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
     }
