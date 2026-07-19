@@ -1,0 +1,9 @@
+Use `List<int>` in code and List<int> in prose.
+
+The generic type Vector<T> is common in .NET.
+
+First line<br>second line.
+
+Tags like <b>bold</b> and <i>italic</i> and <u>underline</u> stay visible.
+
+Unclosed <b>tag should not break rendering.

@@ -41,9 +41,9 @@ More | Data | Here
 
 [Image description](https://example.com/image.png)
 
-Special characters that need escaping: \_ \* \[ \] \( \) \~ \` \> \# \+ \- \=   \. \!
+Special characters that need escaping: \_ \* \[ \] \( \) \~ \` \> \# \+ \- \= \|  \. \!
 
-HTML tags: bold, italic, underline, strikethrough, code
+HTML tags: <b\>bold</b\>, <i\>italic</i\>, <u\>underline</u\>, <s\>strikethrough</s\>, <code\>code</code\>
 
 \-\-\-
 

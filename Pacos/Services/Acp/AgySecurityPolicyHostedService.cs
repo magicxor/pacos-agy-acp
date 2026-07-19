@@ -13,19 +13,38 @@ namespace Pacos.Services.Acp;
 /// the bot begins accepting messages (and therefore before any <c>agy</c>
 /// process is spawned).
 ///
-/// IMPORTANT: agy's permission engine is NOT a hard security boundary in headless
-/// (<c>agy -p</c>) mode — unconfigured actions default to <em>allow</em> (fail-open).
-/// Its exact regex flavor and anchoring are undocumented/observed to be inconsistent,
-/// so the default command policy uses RE2-safe, fully-anchored deny patterns WITHOUT
-/// negative lookahead (see the "nolookahead" mode). These rules are best-effort
-/// defense-in-depth ONLY. The real isolation boundary must be the container
-/// (read-only rootfs, dropped capabilities, pids/memory/cpu limits, no-new-privileges,
+/// Since agy 1.1.3/1.1.4 headless (<c>agy -p</c>) mode is fail-closed: it honors
+/// this settings.json (permissions, file access, agent mode, artifact review) and
+/// auto-denies any action that would require an interactive confirmation, so the
+/// <c>allow</c> list below is load-bearing — everything the agent legitimately
+/// needs (workspace/brain file I/O, the cp delivery command, web access) must be
+/// explicitly allowed or the bot stops working.
+///
+/// Matching semantics (verified empirically against agy 1.1.4 headless runs):
+/// precedence is Deny &gt; Ask &gt; Allow; file rules are literal absolute paths that
+/// cover the whole subtree; <c>command(...)</c>/<c>unsandboxed(...)</c> targets are
+/// matched LITERALLY unless the target starts with <c>regex:</c>. A regex target is
+/// whitespace-tokenized, each token is an anchored RE2 regular expression
+/// (<c>^(?:token)$</c>) matched against the corresponding command token, and rules
+/// match as a token-prefix of the command (a bare-regex rule such as
+/// <c>command(cp .*)</c> silently never matches — every regex-shaped rule below
+/// MUST carry the <c>regex:</c> prefix, in allow and deny alike). The deny rules
+/// are kept as defense-in-depth: they also override agy's built-in default command
+/// grants (e.g. <c>command(cat)</c>) and protect against a future fail-open
+/// regression. The real isolation boundary is still the container (read-only
+/// rootfs, dropped capabilities, pids/memory/cpu limits, no-new-privileges,
 /// egress allow-list).
 ///
 /// The policy is the single source of truth and lives in code so it cannot be
 /// forgotten or silently replaced by a mounted volume / stale image layer. If
 /// the file cannot be written the application fails to start (fail-closed) so
 /// the agent never runs with weaker-than-intended permissions.
+///
+/// NOTE: this policy is Linux-shaped and only fully works in the production
+/// container. On a Windows dev machine agy feeds the file rules into the
+/// run_command sandbox spec, which rejects the Linux deny paths (/app, /bin, …)
+/// as non-absolute, and the "must start with /" cp denies fire on drive-letter
+/// paths — so every terminal command fails locally even though file I/O works.
 /// </summary>
 public sealed class AgySecurityPolicyHostedService : IHostedService
 {
@@ -94,7 +113,11 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
 
     /// <summary>
     /// agy normalizes paths with forward slashes; keep generated paths valid on
-    /// Windows too by converting backslashes and trimming a trailing slash.
+    /// Windows too by converting backslashes and trimming a trailing slash. Drive
+    /// letters must be KEPT: agy strips them symmetrically from rules and checked
+    /// paths at match time, while the sandbox configuration for run_command feeds
+    /// the allowlisted paths to the OS verbatim and rejects drive-less paths as
+    /// non-absolute (verified on 1.1.4 on Windows).
     /// </summary>
     private static string NormalizePath(string path) => path.Replace('\\', '/').TrimEnd('/');
 
@@ -128,7 +151,9 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         }
 
         // The per-chat workspace root and the agy brain staging dir are the only
-        // file locations the agent may touch.
+        // file locations the agent may touch. The brain dir lies outside the
+        // workspace, so without this explicit allow every write to it would be
+        // auto-denied in headless mode.
         AllowReadWrite(_workspaceRoot);
         AllowReadWrite($"{cli}/brain");
 
@@ -143,7 +168,29 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
 
         AppendCommandRules(allow, deny, deniedPaths, _workspaceRoot, $"{cli}/brain");
 
-        var policy = new { model = _chatModel, permissions = new { allow, deny }, toolPermission = "strict" };
+        // Headless agy (>= 1.1.3) honors these settings and auto-denies anything
+        // that would need an interactive confirmation, so every review pause must
+        // be resolved up front:
+        // - agentMode "accept-edits": skip the request-review diff pause before
+        //   file writes (permission deny rules still take precedence).
+        // - toolPermission "request-review": allowlisted commands run, everything
+        //   else asks and is therefore auto-denied in headless mode. "strict" is
+        //   NOT usable here: it prompts even for allowlisted commands (verified on
+        //   1.1.4), which headless mode turns into a blanket auto-deny.
+        // - artifactReviewPolicy "always-proceed": never pause on agy's own plan/
+        //   report artifacts (they live in the allowlisted brain dir anyway).
+        // - trustedWorkspaces: pre-trust the workspace root (covers every per-chat
+        //   subdirectory) so headless runs never hit the folder-trust gate.
+        var policy = new
+        {
+            enableTelemetry = false,
+            model = _chatModel,
+            agentMode = "accept-edits",
+            toolPermission = "request-review",
+            artifactReviewPolicy = "always-proceed",
+            trustedWorkspaces = new[] { _workspaceRoot },
+            permissions = new { allow, deny },
+        };
         return JsonSerializer.Serialize(policy, PolicyJsonOptions);
     }
 
@@ -262,35 +309,44 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
     }
 
     /// <summary>
-    /// RE2-safe strict whitelist with NO negative lookahead, expressed as a set of
-    /// fully-anchored (<c>^...$</c>) deny patterns that each describe an ENTIRE bad
-    /// command line. This construction is robust whether agy full-matches
-    /// (<c>^(?:rule)$</c>) or partial/substring-matches its rules, and compiles on RE2
-    /// (Go) engines. Validated against a positive/negative test matrix under both
-    /// interpretations.
+    /// RE2-safe strict whitelist with NO negative lookahead. Every rule body is
+    /// emitted with the <c>regex:</c> target prefix — since agy 1.0.13 command
+    /// targets are matched literally by default and a bare-regex rule silently
+    /// never matches (verified on 1.1.4). With the prefix, agy whitespace-tokenizes
+    /// the target, treats every token as an anchored RE2 regex (<c>^(?:token)$</c>)
+    /// and matches rules as a token-prefix of the command, so these patterns behave
+    /// the same whether the engine full-matches or prefix-matches. Validated
+    /// against a positive/negative test matrix under both interpretations.
     ///
     /// The permitted shape is exactly <c>cp &lt;abs-no-meta-no-dotdot&gt; &lt;abs-no-meta-no-dotdot&gt;</c>
-    /// (two arguments). The destination is not positively constrained to the output
-    /// directory (that needs lookahead); functionally this is fine because only files
-    /// that end up in the per-turn output directory are ever delivered, and the
-    /// container read-only rootfs blocks writes elsewhere. Sensitive source roots are
-    /// denied by name as a best-effort. This is defense-in-depth, not a boundary.
+    /// (two arguments). Because allow rules prefix-match, the "three or more
+    /// arguments" deny rules below are what stops the 3-token allow rule from also
+    /// matching longer commands. The destination is not positively constrained to
+    /// the output directory (that needs lookahead); functionally this is fine
+    /// because only files that end up in the per-turn output directory are ever
+    /// delivered, and the container read-only rootfs blocks writes elsewhere.
+    /// Sensitive source roots are denied by name as a best-effort. agy 1.1.3+
+    /// headless mode already auto-denies any command that matches no allow rule,
+    /// so this deny wall is defense-in-depth (it also outranks agy's built-in
+    /// default command grants such as <c>command(cat)</c>), not the boundary.
     /// </summary>
     private static void AppendNoLookaheadCommandRules(List<string> allow, List<string> deny, List<string> deniedPaths, string workspaceRoot, string brainDir)
     {
         // agy treats command(...) and unsandboxed(...) as separate permission verbs,
         // so every rule body has to be registered under both. These helpers emit the
         // identical pattern for both verbs to avoid duplicating each line by hand.
+        // The regex: prefix is mandatory: without it the target is matched as a
+        // literal command prefix and every pattern here would be dead.
         void AddAllow(string body)
         {
-            allow.Add($"command({body})");
-            allow.Add($"unsandboxed({body})");
+            allow.Add($"command(regex:{body})");
+            allow.Add($"unsandboxed(regex:{body})");
         }
 
         void AddDeny(string body)
         {
-            deny.Add($"command({body})");
-            deny.Add($"unsandboxed({body})");
+            deny.Add($"command(regex:{body})");
+            deny.Add($"unsandboxed(regex:{body})");
         }
 
         // The workspace root and the agy brain staging dir are resolved dynamically

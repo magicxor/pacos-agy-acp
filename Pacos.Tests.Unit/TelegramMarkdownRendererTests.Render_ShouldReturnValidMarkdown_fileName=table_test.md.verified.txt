@@ -45,8 +45,8 @@ rows\.
 
 ```
 Fruit | Price | Advantages
-Bananas | $1.34 | 
-Oranges | $2.10 | 
+Bananas | $1.34 | built-in wrapper, bright color
+Oranges | $2.10 | cures scurvy, tasty
 ```
 
 Cells can span multiple columns or rows:
@@ -86,7 +86,14 @@ Right | Left | Default | Center
 
 Note: pandoc also recognizes pipe tables of the following form, as can be produced by Emacs’ orgtbl\-mode:
 
- One  Two   
-\-\-\-\-\-\+\-\-\-\-\-\-\-
- my   table 
- is   nice
+\| One \| Two   \|
+\|\-\-\-\-\-\+\-\-\-\-\-\-\-\|
+\| my  \| table \|
+\| is  \| nice  \|
+
+*Inline types in cells*
+
+```
+Company | Link | Note
+AT&T | https://example.com/page | a<br>b
+```

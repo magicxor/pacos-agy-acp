@@ -157,4 +157,23 @@ internal sealed class StringExtensionsTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => _ = source.Cut(maxLength));
     }
+
+    [Test]
+    public void LongestRunOf_WhenNull_ShouldReturnZero()
+    {
+        const string? source = null;
+        Assert.That(source.LongestRunOf('`'), Is.EqualTo(0));
+    }
+
+    [TestCase("", '`', 0)]
+    [TestCase("abc", '`', 0)]
+    [TestCase("a`b", '`', 1)]
+    [TestCase("`a``b", '`', 2)]
+    [TestCase("```", '`', 3)]
+    [TestCase("``a```b``", '`', 3)]
+    [TestCase("--a---b--", '-', 3)]
+    public void LongestRunOf_ShouldReturnLongestConsecutiveRun(string source, char value, int expected)
+    {
+        Assert.That(source.LongestRunOf(value), Is.EqualTo(expected));
+    }
 }

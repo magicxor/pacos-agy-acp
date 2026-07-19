@@ -214,7 +214,9 @@ public sealed class MentionHandler
             response = new ChatResponseInfo($"{e.GetType().Name}: {e.Message}", []);
         }
 
-        var replyText = response.Text.Cut(Const.MaxTelegramMessageLength);
+        // Short replies keep the classic MarkdownV2 message; anything longer than the regular
+        // message limit is sent as a rich message, which allows up to MaxTelegramRichMessageLength
+        var replyText = response.Text.Cut(Const.MaxTelegramRichMessageLength);
 
         if (string.IsNullOrWhiteSpace(replyText) && response.Files.Count == 0)
         {
@@ -223,18 +225,25 @@ public sealed class MentionHandler
 
         if (!string.IsNullOrWhiteSpace(replyText))
         {
-            var markdownReplyText = _markdownConversionService.ConvertToTelegramMarkdown(replyText);
-
-            _logger.LogInformation("Replying to {Author} with: {ReplyText}", author, replyText);
-
-            try
+            if (replyText.Length > Const.MaxTelegramMessageLength)
             {
-                await SendReply(markdownReplyText, ParseMode.MarkdownV2);
+                await SendRichReply(replyText);
             }
-            catch (Exception e)
+            else
             {
-                _logger.LogError(e, "Failed to send message with MarkdownV2. Falling back to plain text");
-                await SendReply(replyText, ParseMode.None);
+                var markdownReplyText = _markdownConversionService.ConvertToTelegramMarkdown(replyText);
+
+                _logger.LogInformation("Replying to {Author} with: {ReplyText}", author, replyText);
+
+                try
+                {
+                    await SendReply(markdownReplyText, ParseMode.MarkdownV2);
+                }
+                catch (Exception e)
+                {
+                    _logger.LogError(e, "Failed to send message with MarkdownV2. Falling back to plain text");
+                    await SendReply(replyText, ParseMode.None);
+                }
             }
         }
 
@@ -304,6 +313,27 @@ public sealed class MentionHandler
                 parseMode,
                 new ReplyParameters { MessageId = updateMessage.MessageId, },
                 cancellationToken: cancellationToken);
+        }
+
+        async Task SendRichReply(string text)
+        {
+            var richMarkdownText = _markdownConversionService.ConvertToTelegramRichMarkdown(text);
+
+            _logger.LogInformation("Replying to {Author} with a rich message of {Length} characters", author, text.Length);
+
+            try
+            {
+                await botClient.SendRichMessage(
+                    new ChatId(updateMessage.Chat.Id),
+                    new InputRichMessage { Markdown = richMarkdownText, },
+                    new ReplyParameters { MessageId = updateMessage.MessageId, },
+                    cancellationToken: cancellationToken);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Failed to send rich message. Falling back to cut plain text");
+                await SendReply(text.Cut(Const.MaxTelegramMessageLength), ParseMode.None);
+            }
         }
 
         async Task SendOutputFile(OutputFile file)
