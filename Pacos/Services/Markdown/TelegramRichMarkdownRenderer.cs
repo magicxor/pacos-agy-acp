@@ -18,15 +18,19 @@ namespace Pacos.Services.Markdown;
 /// </summary>
 public sealed class TelegramRichMarkdownRenderer
 {
-    // Soft breaks are emitted as GFM hard breaks (two trailing spaces) to preserve the
-    // line structure of the source text; a bare newline would be collapsed into a space.
-    private const string HardLineBreak = "  \n";
+    // Soft breaks are emitted as GFM hard breaks to preserve the line structure of the source
+    // text; a bare newline would be collapsed into a space. The backslash form is used instead
+    // of two trailing spaces because trailing whitespace does not survive editors and linters
+    // (e.g. the .editorconfig of this very repository trims it in the snapshot files).
+    private const string HardLineBreak = "\\\n";
     private const int MinTableColumnWidth = 3;
 
     private readonly StringBuilder _output = new();
     private readonly HashSet<string> _activeMarkers = new(StringComparer.Ordinal);
 
     private bool InTableCell { get; init; }
+
+    private bool InSingleLine { get; init; }
 
     public string Render(MarkdownDocument document)
     {
@@ -87,7 +91,7 @@ public sealed class TelegramRichMarkdownRenderer
     private void RenderHeading(HeadingBlock heading)
     {
         // A multi-line setext heading must collapse to one line to stay a valid ATX heading
-        var text = FlattenToSingleLine(BuildInlinesText(heading.Inline));
+        var text = FlattenToSingleLine(BuildInlinesText(heading.Inline, singleLine: true));
         _output.Append('#', heading.Level).Append(' ').Append(text).Append("\n\n");
     }
 
@@ -220,7 +224,7 @@ public sealed class TelegramRichMarkdownRenderer
     private string BuildQuoteText(QuoteBlock quote)
     {
         var blockTexts = quote
-            .Select(BuildBlockText)
+            .Select(block => BuildBlockText(block))
             .Where(static text => text.Length > 0);
         var joined = string.Join("\n\n", blockTexts);
 
@@ -335,7 +339,7 @@ public sealed class TelegramRichMarkdownRenderer
 
     private string BuildTableCellText(TableCell cell)
     {
-        var renderer = new TelegramRichMarkdownRenderer { InTableCell = true };
+        var renderer = new TelegramRichMarkdownRenderer { InTableCell = true, InSingleLine = true };
         foreach (var block in cell)
         {
             renderer.RenderBlock(block);
@@ -354,7 +358,7 @@ public sealed class TelegramRichMarkdownRenderer
         foreach (var footnote in footnoteGroup.OfType<Footnote>())
         {
             var blockTexts = footnote
-                .Select(BuildBlockText)
+                .Select(block => BuildBlockText(block, singleLine: true))
                 .Where(static text => text.Length > 0);
             var content = FlattenToSingleLine(string.Join(' ', blockTexts));
             _output.Append("[^").Append(GetFootnoteLabel(footnote)).Append("]: ").Append(content).Append('\n');
@@ -410,7 +414,7 @@ public sealed class TelegramRichMarkdownRenderer
                 _output.Append(autolink.Url);
                 break;
             case LineBreakInline:
-                _output.Append(HardLineBreak);
+                _output.Append(InSingleLine ? " " : HardLineBreak);
                 break;
             case HtmlInline html:
                 // Tags are shown verbatim: LLMs writing HTML usually mean it to be read, not rendered
@@ -509,18 +513,22 @@ public sealed class TelegramRichMarkdownRenderer
         _output.Append(fence).Append(padding).Append(content).Append(padding).Append(fence);
     }
 
-    private TelegramRichMarkdownRenderer CreateChild() => new() { InTableCell = InTableCell };
-
-    private string BuildBlockText(Block block)
+    private TelegramRichMarkdownRenderer CreateChild(bool singleLine = false) => new()
     {
-        var renderer = CreateChild();
+        InTableCell = InTableCell,
+        InSingleLine = InSingleLine || singleLine,
+    };
+
+    private string BuildBlockText(Block block, bool singleLine = false)
+    {
+        var renderer = CreateChild(singleLine);
         renderer.RenderBlock(block);
         return renderer._output.ToString().TrimEnd('\n');
     }
 
-    private string BuildInlinesText(ContainerInline? container)
+    private string BuildInlinesText(ContainerInline? container, bool singleLine = false)
     {
-        var renderer = CreateChild();
+        var renderer = CreateChild(singleLine);
         renderer.RenderInlines(container);
         return renderer._output.ToString();
     }

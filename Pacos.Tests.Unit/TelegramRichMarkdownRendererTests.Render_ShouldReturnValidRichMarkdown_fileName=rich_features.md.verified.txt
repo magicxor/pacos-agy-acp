@@ -12,7 +12,7 @@ Combined **bold with ==marked== and ~~struck~~ inside** and a ||spoiler||.
 
 Money: \$5 + \$10 = \$15, path C:\\temp\\file, 2 \< 3, a \=\= b, x |\| y, 5 \* 3 = 15.
 
-Line one  
+Line one\
 Line two of the same paragraph
 
 >Quoted paragraph one

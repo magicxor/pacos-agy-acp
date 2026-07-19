@@ -16,12 +16,12 @@ Right     Left     Center     Default
 
 ---
 
-Centered   Default           Right Left  
+Centered   Default           Right Left\
 Header    Aligned         Aligned Aligned
 
 ---
 
-First    row                12.0 Example of a row that  
+First    row                12.0 Example of a row that\
 spans multiple lines.
 
 ## Second    row                 5.0 Here's another one. Note the blank line between rows.
@@ -30,11 +30,11 @@ The header may be omitted in multiline tables as well as simple tables:
 
 ---
 
-First    row                12.0 Example of a row that  
+First    row                12.0 Example of a row that\
 spans multiple lines.
 
-Second    row                 5.0 Here's another one. Note  
-the blank line between  
+Second    row                 5.0 Here's another one. Note\
+the blank line between\
 rows.
 
 ---
@@ -48,28 +48,28 @@ rows.
 
 Cells can span multiple columns or rows:
 
-+---------------------+----------+  
-| Property            | Earth    |  
-+\=\=\=\=\=\=\===+=+\=\=\=\=\=\=\=\=\=\=+  
-|             | min   | -89.2 °C |  
-| Temperature +-------+----------+  
-| 1961-1990   | mean  | 14 °C    |  
-|             +-------+----------+  
-|             | max   | 56.7 °C  |  
-+-------------+-------+----------+  
-  
++---------------------+----------+\
+| Property            | Earth    |\
++\=\=\=\=\=\=\===+=+\=\=\=\=\=\=\=\=\=\=+\
+|             | min   | -89.2 °C |\
+| Temperature +-------+----------+\
+| 1961-1990   | mean  | 14 °C    |\
+|             +-------+----------+\
+|             | max   | 56.7 °C  |\
++-------------+-------+----------+\
+\
 A table header may contain more than one row:==
 
-+---------------------+-----------------------+  
-| Location            | Temperature 1961-1990 |  
-|                     | in degree Celsius     |  
-|                     +-------+-------+-------+  
-|                     | min   | mean  | max   |  
-+\=\=\=\=\=\=\=\=\=\=\=\=\=\=\===+=+=+=+  
-| Antarctica          | -89.2 | N/A   | 19.8  |  
-+---------------------+-------+-------+-------+  
-| Earth               | -89.2 | 14    | 56.7  |  
-+---------------------+-------+-------+-------+  
++---------------------+-----------------------+\
+| Location            | Temperature 1961-1990 |\
+|                     | in degree Celsius     |\
+|                     +-------+-------+-------+\
+|                     | min   | mean  | max   |\
++\=\=\=\=\=\=\=\=\=\=\=\=\=\=\===+=+=+=+\
+| Antarctica          | -89.2 | N/A   | 19.8  |\
++---------------------+-------+-------+-------+\
+| Earth               | -89.2 | 14    | 56.7  |\
++---------------------+-------+-------+-------+\
 ==
 
 ## Pipe tables
@@ -82,9 +82,9 @@ A table header may contain more than one row:==
 
 Note: pandoc also recognizes pipe tables of the following form, as can be produced by Emacs’ orgtbl-mode:
 
-| One | Two   |  
-|-----+-------|  
-| my  | table |  
+| One | Two   |\
+|-----+-------|\
+| my  | table |\
 | is  | nice  |
 
 ## Inline types in cells
