@@ -412,18 +412,7 @@ public sealed class TelegramMarkdownRenderer
                 {
                     if (cell is TableCell tableCell)
                     {
-                        var cellContent = new StringBuilder();
-                        foreach (var block in tableCell)
-                        {
-                            if (block is ParagraphBlock { Inline: not null } para)
-                            {
-                                foreach (var inline in para.Inline)
-                                {
-                                    cellContent.Append(GetPlainText(inline));
-                                }
-                            }
-                        }
-                        cells.Add(cellContent.ToString());
+                        cells.Add(GetPlainText(tableCell));
                     }
                 }
                 _output.AppendLine(EscapeCodeContent(string.Join(" | ", cells)));
@@ -650,6 +639,28 @@ public sealed class TelegramMarkdownRenderer
         if (string.IsNullOrEmpty(url)) return string.Empty;
 
         return url.Replace("\\", @"\\", StringComparison.Ordinal).Replace(")", "\\)", StringComparison.Ordinal);
+    }
+
+    private string GetPlainText(Block block)
+    {
+        switch (block)
+        {
+            case ListBlock list:
+                return string.Join(", ", list.OfType<ListItemBlock>().Select(GetPlainText).Where(static text => text.Length > 0));
+            case LeafBlock { Inline: not null } leaf:
+                var result = new StringBuilder();
+                foreach (var inline in leaf.Inline)
+                {
+                    result.Append(GetPlainText(inline));
+                }
+                return result.ToString();
+            case LeafBlock leaf:
+                return (leaf.Lines.ToString() ?? string.Empty).ReplaceLineEndings(" ");
+            case ContainerBlock container:
+                return string.Join(" ", container.Select(GetPlainText).Where(static text => text.Length > 0));
+            default:
+                return string.Empty;
+        }
     }
 
     private string GetPlainText(Inline inline)
