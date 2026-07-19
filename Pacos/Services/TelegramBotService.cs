@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Pacos.Constants;
+using Pacos.Extensions;
 using Pacos.Models.Options;
 using Pacos.Services.BackgroundTasks;
 using Pacos.Services.ChatCommandHandlers;
@@ -78,7 +79,10 @@ public sealed class TelegramBotService
                 }
 
                 var author = update.Message.From.Username ?? string.Join(' ', update.Message.From.FirstName, update.Message.From.LastName).Trim();
-                var message = (update.Message.Text ?? update.Message.Caption ?? string.Empty).Trim();
+                var message = (update.Message.Text
+                               ?? update.Message.Caption
+                               ?? update.Message.RichMessage.GetPlainText())
+                    .Trim();
                 var currentMention = Const.Mentions.FirstOrDefault(mention => message.StartsWith(mention, StringComparison.OrdinalIgnoreCase));
 
                 if (message.StartsWith(Const.DrawCommand, StringComparison.OrdinalIgnoreCase))
