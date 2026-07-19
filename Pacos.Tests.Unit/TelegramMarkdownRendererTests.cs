@@ -88,6 +88,40 @@ internal sealed class TelegramMarkdownRendererTests
     }
 
     [Test]
+    public void Render_WhenOrderedListContinuesAfterParagraph_ShouldPreserveNumbering()
+    {
+        var standardMarkdown = string.Join('\n', "1. one", "2. two", string.Empty, "interruption", string.Empty, "3. three", "4. four");
+        var expectedTelegramMarkdown = string.Join(
+            Environment.NewLine,
+            @"1\. one",
+            @"2\. two",
+            string.Empty,
+            "interruption",
+            string.Empty,
+            @"3\. three",
+            @"4\. four");
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenNestedOrderedListStartsAtFive_ShouldPreserveStartNumber()
+    {
+        var standardMarkdown = string.Join('\n', "1. outer", string.Empty, "   5. nested five", "   6. nested six");
+        var expectedTelegramMarkdown = string.Join(
+            Environment.NewLine,
+            @"1\. outer",
+            @"  5\. nested five",
+            @"  6\. nested six");
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
     [TestCase("checkbox_test.md")]
     [TestCase("image_test.md")]
     [TestCase("table_test.md")]

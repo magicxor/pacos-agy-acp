@@ -102,7 +102,7 @@ public sealed class TelegramMarkdownRenderer
 
     private void RenderList(ListBlock list)
     {
-        int index = 1;
+        int index = GetOrderedStart(list);
         foreach (var listItemBlock in list)
         {
             var item = (ListItemBlock)listItemBlock;
@@ -224,7 +224,7 @@ public sealed class TelegramMarkdownRenderer
     private string RenderListDirectly(ListBlock list, string indent)
     {
         var nestedOutput = new StringBuilder();
-        int index = 1;
+        int index = GetOrderedStart(list);
         foreach (var listItemBlock in list)
         {
             var item = (ListItemBlock)listItemBlock;
@@ -627,6 +627,9 @@ public sealed class TelegramMarkdownRenderer
             output.AppendLine();
         }
     }
+
+    private static int GetOrderedStart(ListBlock list)
+        => int.TryParse(list.OrderedStart, NumberStyles.None, CultureInfo.InvariantCulture, out int start) ? start : 1;
 
     private static string EscapeText(string text)
     {
