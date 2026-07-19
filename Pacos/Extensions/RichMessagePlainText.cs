@@ -119,6 +119,22 @@ public static class RichMessagePlainText
         sb.Append('\n');
     }
 
+    // The link target is kept in markdown syntax; without it the URL would be lost for the LLM prompt
+    private static void AppendUrl(StringBuilder sb, RichTextUrl url)
+    {
+        var textSb = new StringBuilder();
+        AppendText(textSb, url.Text);
+        var text = textSb.ToString();
+
+        if (string.IsNullOrEmpty(url.Url) || text == url.Url)
+        {
+            sb.Append(text);
+            return;
+        }
+
+        sb.Append('[').Append(text).Append("](").Append(url.Url).Append(')');
+    }
+
     private static string GetTableCellText(RichBlockTableCell cell)
     {
         var sb = new StringBuilder();
@@ -169,7 +185,7 @@ public static class RichMessagePlainText
             case RichTextStrikethrough t:  AppendText(sb, t.Text); break;
             case RichTextSpoiler t:        AppendText(sb, t.Text); break;
             case RichTextCode t:           AppendText(sb, t.Text); break;
-            case RichTextUrl t:            AppendText(sb, t.Text); break;
+            case RichTextUrl t:            AppendUrl(sb, t); break;
             case RichTextEmailAddress t:   AppendText(sb, t.Text); break;
             case RichTextPhoneNumber t:    AppendText(sb, t.Text); break;
             case RichTextBankCardNumber t: AppendText(sb, t.Text); break;

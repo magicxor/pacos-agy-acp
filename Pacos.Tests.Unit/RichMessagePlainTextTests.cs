@@ -191,7 +191,9 @@ internal sealed class RichMessagePlainTextTests
         yield return new TestCaseData(new RichTextMarked { Text = Plain("выделенный") }, "выделенный");
         yield return new TestCaseData(new RichTextSubscript { Text = Plain("нижний индекс") }, "нижний индекс");
         yield return new TestCaseData(new RichTextSuperscript { Text = Plain("верхний индекс") }, "верхний индекс");
-        yield return new TestCaseData(new RichTextUrl { Text = Plain("ссылка"), Url = "https://t.me/" }, "ссылка");
+        yield return new TestCaseData(new RichTextUrl { Text = Plain("ссылка"), Url = "https://t.me/" }, "[ссылка](https://t.me/)");
+        yield return new TestCaseData(new RichTextUrl { Text = Plain("https://t.me/"), Url = "https://t.me/" }, "https://t.me/");
+        yield return new TestCaseData(new RichTextUrl { Text = Plain("без адреса"), Url = string.Empty }, "без адреса");
         yield return new TestCaseData(new RichTextEmailAddress { Text = Plain("почта"), EmailAddress = "user@example.com" }, "почта");
         yield return new TestCaseData(new RichTextPhoneNumber { Text = Plain("телефон"), PhoneNumber = "+123456789" }, "телефон");
         yield return new TestCaseData(new RichTextBankCardNumber { Text = Plain("4242 4242 4242 4242"), BankCardNumber = "4242424242424242" }, "4242 4242 4242 4242");
