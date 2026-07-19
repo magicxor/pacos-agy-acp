@@ -524,6 +524,11 @@ public sealed class TelegramMarkdownRenderer
 
         if (string.IsNullOrEmpty(marker))
         {
+            // Unknown emphasis type: keep the content, just drop the styling
+            foreach (var child in emphasis)
+            {
+                RenderInline(child);
+            }
             return;
         }
 

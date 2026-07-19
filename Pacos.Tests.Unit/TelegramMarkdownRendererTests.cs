@@ -1,4 +1,5 @@
 using Markdig;
+using Markdig.Extensions.EmphasisExtras;
 using Pacos.Extensions;
 using Pacos.Services;
 using Pacos.Services.Markdown;
@@ -83,6 +84,21 @@ internal sealed class TelegramMarkdownRendererTests
         const string expectedTelegramMarkdown = "\u200B_\u200Bouter inner outer\u200B_\u200B";
 
         var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenEmphasisTypeIsUnknown_ShouldKeepContentWithoutMarkers()
+    {
+        // The production pipeline has no superscript, so build one that yields an EmphasisInline the renderer does not map
+        var pipelineWithSuperscript = new MarkdownPipelineBuilder()
+            .UseEmphasisExtras(EmphasisExtraOptions.Superscript)
+            .Build();
+        const string standardMarkdown = "E = mc^2^ formula";
+        const string expectedTelegramMarkdown = @"E \= mc2 formula";
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, pipelineWithSuperscript);
         var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
         Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
     }
