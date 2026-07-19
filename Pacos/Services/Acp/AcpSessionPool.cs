@@ -172,10 +172,17 @@ public sealed class AcpSessionPool : IAsyncDisposable
             environment["GEMINI_API_KEY"] = options.GeminiApiKey;
         }
 
+        // agy >= 1.1.x caps headless runs with its own --print-timeout (default
+        // 5m), so align it with the bot's prompt timeout or longer turns would be
+        // cut short by the CLI default. Injected first so a user-supplied
+        // --print-timeout in AgyExtraArgs wins (later flags override earlier ones).
+        var extraArgs = string.Create(CultureInfo.InvariantCulture, $"--print-timeout {options.PromptTimeoutSeconds}s");
         if (!string.IsNullOrWhiteSpace(options.AgyExtraArgs))
         {
-            environment["AGY_EXTRA_ARGS"] = options.AgyExtraArgs;
+            extraArgs = $"{extraArgs} {options.AgyExtraArgs}";
         }
+
+        environment["AGY_EXTRA_ARGS"] = extraArgs;
 
         return environment;
     }
