@@ -1,0 +1,6 @@
+services:
+  pacos:
+    image: ${DOCKER_REGISTRY-}pacos
+    build:
+      context: .
+      dockerfile: Pacos/Dockerfile
