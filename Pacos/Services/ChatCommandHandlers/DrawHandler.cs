@@ -161,7 +161,7 @@ public sealed class DrawHandler
             ? $"{author}: {basis}."
             : $"{author}: {basis} по запросу: {prompt}.";
 
-        return request + " Обязательно сохрани результат как файл изображения (.png) в выходную директорию.";
+        return request + " Обязательно сохрани результат как файл изображения в выходную директорию.";
     }
 
     private static bool IsImageFile(string fileName)
