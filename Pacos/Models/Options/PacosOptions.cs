@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel.DataAnnotations;
-using Pacos.Enums;
 
 namespace Pacos.Models.Options;
 
@@ -64,7 +63,7 @@ public sealed class PacosOptions
 
     /// <summary>
     /// MCP servers agy should load, keyed by server name. Written to
-    /// <c>~/.gemini/antigravity-cli/mcp_config.json</c> on startup by
+    /// <c>~/.gemini/config/mcp_config.json</c> on startup by
     /// <see cref="Services.Acp.AgyMcpConfigHostedService"/>; the security policy
     /// allows MCP tool calls only for the server names listed here (everything
     /// else is auto-denied by headless agy). Note that a stdio MCP server saving
@@ -77,7 +76,6 @@ public sealed class PacosOptions
     {
         ["gallerydl"] = new McpServer
         {
-            Type = ServerType.Stdio,
             Command = "dotnet",
             Args = ["/opt/gallerydl-mcp/GalleryDl.McpServer.dll"],
             Env = new Dictionary<string, string?>

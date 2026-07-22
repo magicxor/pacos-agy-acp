@@ -10,10 +10,12 @@ namespace Pacos.Services.Acp;
 
 /// <summary>
 /// Publishes the MCP servers configured in <see cref="PacosOptions.McpServers"/> to agy by
-/// (over)writing <c>$HOME/.gemini/antigravity-cli/mcp_config.json</c> on every startup,
-/// mirroring how <see cref="AgySecurityPolicyHostedService"/> owns settings.json. The ACP
-/// route (session/new mcpServers) is a dead end: the agy-acp adapter ignores request params
-/// entirely, so the config file is the only channel agy actually reads.
+/// (over)writing <c>$HOME/.gemini/config/mcp_config.json</c> on every startup, mirroring how
+/// <see cref="AgySecurityPolicyHostedService"/> owns settings.json. This is the current agy
+/// config location (verified against a live agy installation; <c>~/.gemini/antigravity-cli/
+/// mcp_config.json</c> is the pre-migration legacy path). The ACP route (session/new
+/// mcpServers) is a dead end: the agy-acp adapter ignores request params entirely, so the
+/// config file is the only channel agy actually reads.
 ///
 /// Like the security policy, the file is owned by code: a stale or hand-edited config on the
 /// state volume is overwritten, and a write failure stops the application (the same broken
@@ -59,15 +61,14 @@ public sealed class AgyMcpConfigHostedService : IHostedService
                 "Cannot determine HOME directory to write the agy MCP config; refusing to start.");
         }
 
-        var directory = Path.Combine(home, ".gemini", "antigravity-cli");
+        var directory = Path.Combine(home, ".gemini", "config");
         var configPath = Path.Combine(directory, "mcp_config.json");
 
         try
         {
             Directory.CreateDirectory(directory);
 
-            var config = new McpRoot { McpServers = _mcpServers };
-            await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(config, ConfigJsonOptions), cancellationToken);
+            await File.WriteAllTextAsync(configPath, BuildConfigJson(_mcpServers), cancellationToken);
 
             _logger.LogInformation(
                 "Wrote agy MCP config at {ConfigPath} ({ServerCount} server(s): {ServerNames})",
@@ -83,4 +84,11 @@ public sealed class AgyMcpConfigHostedService : IHostedService
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>
+    /// Renders the mcp_config.json content. Kept separate (and public) so tests can pin the
+    /// exact JSON shape agy expects — stdio entries must come out as bare command/args/env.
+    /// </summary>
+    public static string BuildConfigJson(Dictionary<string, McpServer> mcpServers) =>
+        JsonSerializer.Serialize(new McpRoot { McpServers = mcpServers }, ConfigJsonOptions);
 }
