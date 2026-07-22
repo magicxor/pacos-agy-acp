@@ -47,14 +47,14 @@ internal sealed class AgyMcpConfigTests
                 Is.EqualTo("http://gallerydl-webapi:8080"));
             Assert.That(gallerydl["env"]?["GalleryDlApi__MaxTake"]?.GetValue<string>(), Is.EqualTo("10"));
 
-            // Both indexes of the shipped 2-element AllowedPathPrefixes default must be
-            // overridden, otherwise "/tmp" (index 1) would survive the per-index config merge.
+            // The image build empties the shipped AllowedPathPrefixes default, so a single
+            // index-0 override fully defines the allow-list; no other indexes may appear.
             Assert.That(
                 gallerydl["env"]?["GalleryDlApi__AllowedPathPrefixes__0"]?.GetValue<string>(),
                 Is.EqualTo(WorkspaceRoot));
             Assert.That(
-                gallerydl["env"]?["GalleryDlApi__AllowedPathPrefixes__1"]?.GetValue<string>(),
-                Is.EqualTo(WorkspaceRoot));
+                gallerydl["env"]?.AsObject().ContainsKey("GalleryDlApi__AllowedPathPrefixes__1"),
+                Is.False);
 
             // agy's own on-disk format for stdio entries is bare command/args/env:
             // no "type", "headers", "envFile" or "url" members may appear.

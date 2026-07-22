@@ -83,11 +83,10 @@ public sealed class PacosOptions
             {
                 ["GalleryDlApi__BaseUrl"] = "http://gallerydl-webapi:8080",
                 ["GalleryDlApi__MaxTake"] = "10",
-                // The appsettings.json shipped with the server allows ["/downloads", "/tmp"];
-                // .NET config merges arrays per index, so BOTH indexes must be overridden
-                // to pin the allow-list to the workspace root alone.
+                // The Dockerfile empties AllowedPathPrefixes in the server's appsettings.json
+                // at image build time, so this single index fully defines the allow-list
+                // (arrays merge per index across configuration providers).
                 ["GalleryDlApi__AllowedPathPrefixes__0"] = Const.WorkspaceRootPlaceholder,
-                ["GalleryDlApi__AllowedPathPrefixes__1"] = Const.WorkspaceRootPlaceholder,
             },
         },
     };
