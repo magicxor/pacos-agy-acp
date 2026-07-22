@@ -13,15 +13,18 @@ public sealed class DrawHandler
     private readonly ILogger<DrawHandler> _logger;
     private readonly ChatService _chatService;
     private readonly TelegramMediaService _telegramMediaService;
+    private readonly OutputFileSender _outputFileSender;
 
     public DrawHandler(
         ILogger<DrawHandler> logger,
         ChatService chatService,
-        TelegramMediaService telegramMediaService)
+        TelegramMediaService telegramMediaService,
+        OutputFileSender outputFileSender)
     {
         _logger = logger;
         _chatService = chatService;
         _telegramMediaService = telegramMediaService;
+        _outputFileSender = outputFileSender;
     }
 
     public async Task HandleDrawAsync(
@@ -92,42 +95,16 @@ public sealed class DrawHandler
             return;
         }
 
-        var isFirstFile = true;
-        foreach (var file in response.Files)
-        {
-            await using var stream = new MemoryStream(file.Content);
-            var inputFile = new InputFileStream(stream, file.FileName);
-            var fileCaption = isFirstFile && !string.IsNullOrWhiteSpace(caption) ? caption : null;
-            isFirstFile = false;
+        var captionText = !string.IsNullOrWhiteSpace(caption) ? caption : null;
+        var sentCount = await _outputFileSender.SendAsync(
+            botClient,
+            updateMessage.Chat.Id,
+            updateMessage.MessageId,
+            response.Files,
+            captionText,
+            cancellationToken);
 
-            try
-            {
-                if (IsImageFile(file.FileName))
-                {
-                    await botClient.SendPhoto(
-                        chatId: updateMessage.Chat.Id,
-                        photo: inputFile,
-                        caption: fileCaption,
-                        replyParameters: new ReplyParameters { MessageId = updateMessage.MessageId },
-                        cancellationToken: cancellationToken);
-                }
-                else
-                {
-                    await botClient.SendDocument(
-                        chatId: updateMessage.Chat.Id,
-                        document: inputFile,
-                        caption: fileCaption,
-                        replyParameters: new ReplyParameters { MessageId = updateMessage.MessageId },
-                        cancellationToken: cancellationToken);
-                }
-            }
-            catch (Exception e)
-            {
-                _logger.LogError(e, "Failed to send generated file {FileName} to {Author}", file.FileName, author);
-            }
-        }
-
-        _logger.LogInformation("Sent {Count} generated file(s) to {Author}", response.Files.Count, author);
+        _logger.LogInformation("Sent {Count} generated file(s) to {Author}", sentCount, author);
         return;
 
         async Task AddImageAsync(TelegramFileMetadata? metadata, ChatInputOrigin origin)
@@ -162,12 +139,6 @@ public sealed class DrawHandler
             : $"{author}: {basis} по запросу: {prompt}.";
 
         return request + " Обязательно сохрани результат как файл изображения в выходную директорию.";
-    }
-
-    private static bool IsImageFile(string fileName)
-    {
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        return extension is ".jpg" or ".jpeg" or ".png" or ".webp" or ".gif";
     }
 
     /// <summary>

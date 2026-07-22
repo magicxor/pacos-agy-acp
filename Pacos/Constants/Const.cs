@@ -68,6 +68,7 @@ public static class Const
     public const int MaxTelegramMessageLength = 4096;
     public const int MaxTelegramRichMessageLength = 32768;
     public const int MaxTelegramCaptionLength = 1024;
+    public const int MaxTelegramMediaGroupSize = 10;
     public const string DrawCommand = "!drawx";
     public const string ResetCommand = "!resetx";
 }
