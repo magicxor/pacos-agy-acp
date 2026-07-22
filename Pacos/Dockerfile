@@ -51,7 +51,7 @@ COPY --from=adapter-builder /build/target/release/agy-acp /usr/local/bin/agy-acp
 # to the mcp_config.json written at startup by AgyMcpConfigHostedService.
 ENV GALLERYDL_MCP_VERSION=0.1.0
 RUN mkdir -p /opt/gallerydl-mcp && \
-    curl -fsSL "https://github.com/magicxor/GalleryDlManager/releases/download/v${GALLERYDL_MCP_VERSION}/GalleryDl.McpServer-${GALLERYDL_MCP_VERSION}.tar.gz" \
+    curl -fsSL "https://github.com/magicxor/GalleryDlManager/releases/download/${GALLERYDL_MCP_VERSION}/GalleryDl.McpServer-${GALLERYDL_MCP_VERSION}.tar.gz" \
       | tar -xz -C /opt/gallerydl-mcp
 
 # Pin the agy CLI to the installed version; never let it self-update at runtime.
