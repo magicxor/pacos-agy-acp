@@ -54,6 +54,10 @@ public sealed class Program
                     // policy is enforced) before any other hosted service.
                     services.AddHostedService<AgySecurityPolicyHostedService>();
 
+                    // Publishes PacosOptions.McpServers to agy (mcp_config.json); the
+                    // security policy above only allows MCP tools for these servers.
+                    services.AddHostedService<AgyMcpConfigHostedService>();
+
                     var telegramRequestTimeout = TimeSpan.FromSeconds(40);
                     services.AddHttpClient(nameof(HttpClientType.Telegram), httpClient => httpClient.Timeout = Timeout.InfiniteTimeSpan)
                         .AddDefaultLogger()

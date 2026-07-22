@@ -1,0 +1,56 @@
+# Production/staging deployment compose file. Used by deploy_latest.yml on the
+# target server; NOT used for local development (that is docker-compose.yml +
+# docker-compose.override.yml, wired up by Visual Studio).
+#
+# Interpolated variables are exported by the deploy workflow before running
+# `docker compose up`:
+#   PACOS_IMAGE        - full image ref, e.g. registry/pacos:latest
+#   CONTAINER_NAME     - stable bot container name, e.g. pacos2-production
+#   AGY_VOLUME_NAME    - pre-existing named volume with agy state, e.g. pacos_agy_acp_production
+#   PACOS__*           - bot configuration (secrets/vars), see deploy_latest.yml
+services:
+  pacos:
+    image: ${PACOS_IMAGE}
+    container_name: ${CONTAINER_NAME}
+    restart: always
+    stdin_open: true
+    tty: true
+    environment:
+      - Pacos__TelegramBotApiKey=${PACOS__TELEGRAMBOTAPIKEY}
+      - Pacos__AllowedChatIds__0=${PACOS__ALLOWEDCHATIDS__0}
+      - Pacos__AllowedChatIds__1=${PACOS__ALLOWEDCHATIDS__1}
+      - Pacos__AllowedChatIds__2=${PACOS__ALLOWEDCHATIDS__2}
+      - Pacos__AllowedChatIds__3=${PACOS__ALLOWEDCHATIDS__3}
+      - Pacos__AllowedChatIds__4=${PACOS__ALLOWEDCHATIDS__4}
+      - Pacos__AllowedChatIds__5=${PACOS__ALLOWEDCHATIDS__5}
+      - Pacos__AllowedChatIds__6=${PACOS__ALLOWEDCHATIDS__6}
+      - Pacos__AllowedChatIds__7=${PACOS__ALLOWEDCHATIDS__7}
+      - Pacos__AllowedChatIds__8=${PACOS__ALLOWEDCHATIDS__8}
+      - Pacos__AllowedChatIds__9=${PACOS__ALLOWEDCHATIDS__9}
+      - Pacos__ChatModel=${PACOS__CHATMODEL}
+    volumes:
+      - agy-state:/home/agent/.gemini
+    depends_on:
+      - gallerydl-webapi
+    networks:
+      - pacos-net
+
+  # gallery-dl download backend for the GalleryDl MCP server that runs inside
+  # the pacos container (spawned by agy). Reachable only on the compose network
+  # as http://gallerydl-webapi:8080 - no published ports.
+  gallerydl-webapi:
+    image: ghcr.io/magicxor/gallerydl-webapi:0.1.0
+    container_name: ${CONTAINER_NAME}-gallerydl-webapi
+    restart: always
+    networks:
+      - pacos-net
+
+networks:
+  pacos-net:
+
+volumes:
+  agy-state:
+    # Created and chown-ed by the deploy workflow before compose runs; external
+    # so the historical volume (and agy auth state inside it) is reused as-is.
+    name: ${AGY_VOLUME_NAME}
+    external: true

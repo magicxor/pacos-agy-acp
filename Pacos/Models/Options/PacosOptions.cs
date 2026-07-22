@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Pacos.Constants;
 
 namespace Pacos.Models.Options;
 
@@ -60,6 +61,36 @@ public sealed class PacosOptions
     /// </summary>
     [Range(1, 3600)]
     public int PromptTimeoutSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// MCP servers agy should load, keyed by server name. Written to
+    /// <c>~/.gemini/config/mcp_config.json</c> on startup by
+    /// <see cref="Services.Acp.AgyMcpConfigHostedService"/>; the security policy
+    /// allows MCP tool calls only for the server names listed here (everything
+    /// else is auto-denied by headless agy). Env values may contain
+    /// <see cref="Const.WorkspaceRootPlaceholder"/>, which is replaced at startup
+    /// with the resolved workspace root (<see cref="Services.Acp.AcpSessionPool.ResolveRoot"/>),
+    /// so file-saving allow-lists always track <see cref="WorkingDirectoryRoot"/>.
+    /// </summary>
+#pragma warning disable S5332 // plain http is intentional: container-to-container traffic on the internal compose network
+    public Dictionary<string, McpServer> McpServers { get; set; } = new()
+    {
+        ["gallerydl"] = new McpServer
+        {
+            Command = "dotnet",
+            Args = ["/opt/gallerydl-mcp/GalleryDl.McpServer.dll"],
+            Env = new Dictionary<string, string?>
+            {
+                ["GalleryDlApi__BaseUrl"] = "http://gallerydl-webapi:8080",
+                ["GalleryDlApi__MaxTake"] = "10",
+                // The Dockerfile empties AllowedPathPrefixes in the server's appsettings.json
+                // at image build time, so this single index fully defines the allow-list
+                // (arrays merge per index across configuration providers).
+                ["GalleryDlApi__AllowedPathPrefixes__0"] = Const.WorkspaceRootPlaceholder,
+            },
+        },
+    };
+#pragma warning restore S5332
 
     /// <summary>
     /// Which set of agy <c>command(...)</c> permission rules to write into
