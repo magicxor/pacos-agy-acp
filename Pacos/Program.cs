@@ -81,6 +81,7 @@ public sealed class Program
                     services.AddSingleton<AcpSessionPool>();
                     services.AddSingleton<ChatService>();
                     services.AddSingleton<TelegramMediaService>();
+                    services.AddSingleton<OutputFileSender>();
                     services.AddSingleton<DrawHandler>();
                     services.AddSingleton<ResetHandler>();
                     services.AddSingleton<MentionHandler>();

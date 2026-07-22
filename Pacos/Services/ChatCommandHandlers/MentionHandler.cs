@@ -21,6 +21,7 @@ public sealed class MentionHandler
     private readonly MarkdownConversionService _markdownConversionService;
     private readonly VideoConverter _videoConverter;
     private readonly TelegramMediaService _telegramMediaService;
+    private readonly OutputFileSender _outputFileSender;
 
     public MentionHandler(
         ILogger<MentionHandler> logger,
@@ -28,7 +29,8 @@ public sealed class MentionHandler
         ChatService chatService,
         MarkdownConversionService markdownConversionService,
         VideoConverter videoConverter,
-        TelegramMediaService telegramMediaService)
+        TelegramMediaService telegramMediaService,
+        OutputFileSender outputFileSender)
     {
         _logger = logger;
         _rankedLanguageIdentifier = rankedLanguageIdentifier;
@@ -36,6 +38,7 @@ public sealed class MentionHandler
         _markdownConversionService = markdownConversionService;
         _videoConverter = videoConverter;
         _telegramMediaService = telegramMediaService;
+        _outputFileSender = outputFileSender;
     }
 
     /// <summary>
@@ -247,17 +250,15 @@ public sealed class MentionHandler
             }
         }
 
-        foreach (var file in response.Files)
-        {
-            try
-            {
-                await SendOutputFile(file);
-            }
-            catch (Exception e)
-            {
-                _logger.LogError(e, "Failed to send output file {FileName} to {Author}", file.FileName, author);
-            }
-        }
+        // The text reply is already sent above as a separate message, so the
+        // output files carry no caption here.
+        await _outputFileSender.SendAsync(
+            botClient,
+            updateMessage.Chat.Id,
+            updateMessage.MessageId,
+            response.Files,
+            caption: null,
+            cancellationToken);
 
         return;
 
@@ -335,34 +336,5 @@ public sealed class MentionHandler
                 await SendReply(text.Cut(Const.MaxTelegramMessageLength), ParseMode.None);
             }
         }
-
-        async Task SendOutputFile(OutputFile file)
-        {
-            await using var stream = new MemoryStream(file.Content);
-            var inputFile = new InputFileStream(stream, file.FileName);
-
-            if (IsImageFile(file.FileName))
-            {
-                await botClient.SendPhoto(
-                    updateMessage.Chat.Id,
-                    inputFile,
-                    replyParameters: new ReplyParameters { MessageId = updateMessage.MessageId },
-                    cancellationToken: cancellationToken);
-            }
-            else
-            {
-                await botClient.SendDocument(
-                    updateMessage.Chat.Id,
-                    inputFile,
-                    replyParameters: new ReplyParameters { MessageId = updateMessage.MessageId },
-                    cancellationToken: cancellationToken);
-            }
-        }
-    }
-
-    private static bool IsImageFile(string fileName)
-    {
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        return extension is ".jpg" or ".jpeg" or ".png" or ".webp" or ".gif";
     }
 }
