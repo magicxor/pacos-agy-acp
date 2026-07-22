@@ -38,7 +38,10 @@ jobs:
           password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_PORT }}
           source: docker-compose.deploy.yml
-          target: /opt/pacos/${{ inputs.environment }}/
+          # Relative path = under the SSH user's home directory. Keeps the deploy
+          # root-free: a fresh server needs no pre-created /opt/... directories,
+          # drone-scp creates ~/pacos/<env> itself with the user's own permissions.
+          target: pacos/${{ inputs.environment }}/
 
       - name: executing remote ssh commands
         uses: appleboy/ssh-action@v1.2.5
@@ -85,6 +88,6 @@ jobs:
               docker rm "$CONTAINER_NAME" || true
             fi
 
-            cd /opt/pacos/${{ inputs.environment }}
+            cd "$HOME/pacos/${{ inputs.environment }}"
             docker compose -f docker-compose.deploy.yml -p '${{ inputs.container_name }}' pull
             docker compose -f docker-compose.deploy.yml -p '${{ inputs.container_name }}' up -d --remove-orphans
