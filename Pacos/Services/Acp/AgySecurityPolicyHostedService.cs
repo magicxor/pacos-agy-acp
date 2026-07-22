@@ -60,6 +60,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
     private readonly string _workspaceRoot;
     private readonly string _commandRuleMode;
     private readonly string _chatModel;
+    private readonly IReadOnlyCollection<string> _mcpServerNames;
 
     public AgySecurityPolicyHostedService(
         ILogger<AgySecurityPolicyHostedService> logger,
@@ -69,6 +70,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         _workspaceRoot = NormalizePath(AcpSessionPool.ResolveRoot(options.Value));
         _commandRuleMode = (options.Value.AgyCommandRuleMode ?? "nolookahead").Trim().ToLowerInvariant();
         _chatModel = options.Value.ChatModel;
+        _mcpServerNames = options.Value.McpServers.Keys.ToArray();
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -133,7 +135,18 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         var cli = $"{gemini}/antigravity-cli";
 
         List<string> allow = ["read_url(*)", "execute_url(*)"];
-        List<string> deny = ["mcp(*)"];
+        List<string> deny = [];
+
+        // MCP tools: only the servers we ourselves publish to agy (mcp_config.json,
+        // see AgyMcpConfigHostedService) are allowed, by name and by name-prefixed
+        // tool id. There is deliberately NO blanket mcp(*) deny: Deny > Allow, so it
+        // would make these allows dead; headless agy is fail-closed and auto-denies
+        // every MCP tool that matches no allow rule anyway.
+        foreach (var serverName in _mcpServerNames)
+        {
+            allow.Add($"mcp({serverName})");
+            allow.Add($"mcp({serverName}*)");
+        }
 
         // Grants/denies both read_file and write_file for a path in one call —
         // the policy intent is that anything we let the agent write it may also

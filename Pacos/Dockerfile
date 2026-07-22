@@ -45,6 +45,15 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # The bot spawns `agy-acp`, which in turn spawns `agy`; both must be on PATH.
 COPY --from=adapter-builder /build/target/release/agy-acp /usr/local/bin/agy-acp
 
+# Install the GalleryDl MCP server (https://github.com/magicxor/GalleryDlManager),
+# pinned to a released version. The framework-dependent build is arch-neutral IL;
+# agy spawns it as `dotnet /opt/gallerydl-mcp/GalleryDl.McpServer.dll` according
+# to the mcp_config.json written at startup by AgyMcpConfigHostedService.
+ENV GALLERYDL_MCP_VERSION=0.1.0
+RUN mkdir -p /opt/gallerydl-mcp && \
+    curl -fsSL "https://github.com/magicxor/GalleryDlManager/releases/download/v${GALLERYDL_MCP_VERSION}/GalleryDl.McpServer-${GALLERYDL_MCP_VERSION}.tar.gz" \
+      | tar -xz -C /opt/gallerydl-mcp
+
 # Pin the agy CLI to the installed version; never let it self-update at runtime.
 ENV AGY_CLI_DISABLE_AUTO_UPDATE=true
 

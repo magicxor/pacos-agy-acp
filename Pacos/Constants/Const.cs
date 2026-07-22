@@ -52,6 +52,15 @@ public static class Const
                                                     - Пример: cp /home/agent/.gemini/antigravity-cli/brain/img.png /tmp/pacos-agy/123/.turns/abc/output/result.png
                                                     """;
 
+    public const string GalleryDownloadRuleSystemPrompt = """
+                                                    # СКАЧИВАНИЕ КАРТИНОК ИЗ ГАЛЕРЕЙ (MCP)
+                                                    - Тебе доступны MCP-инструменты сервера gallerydl: list_resources (список поддерживаемых сайтов) и download_gallery (скачивание картинок по тегу/запросу с сайта-галереи).
+                                                    - Когда пользователь просит найти/скачать/показать картинки по тегу или запросу с какого-то сайта, используй download_gallery.
+                                                    - В параметр path передавай АБСОЛЮТНЫЙ путь текущей выходной директории (из метки "[SYSTEM: Выходная директория для файлов: <путь>]"). Файлы из неё отправятся в чат автоматически — копировать их через cp НЕ нужно.
+                                                    - Параметры download_gallery: resource — id сайта (например, furry34.com; полный список даст list_resources), query — тег или поисковый запрос, take — сколько картинок скачать (если пользователь не уточнил, бери 1-3), skip — сколько первых результатов пропустить.
+                                                    - Если инструмент вернул ошибку, покажи пользователю её текст.
+                                                    """;
+
     public const int MaxTelegramMessageLength = 4096;
     public const int MaxTelegramRichMessageLength = 32768;
     public const int MaxTelegramCaptionLength = 1024;

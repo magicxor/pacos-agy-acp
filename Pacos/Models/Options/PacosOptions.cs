@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Pacos.Enums;
 
 namespace Pacos.Models.Options;
 
@@ -60,6 +61,33 @@ public sealed class PacosOptions
     /// </summary>
     [Range(1, 3600)]
     public int PromptTimeoutSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// MCP servers agy should load, keyed by server name. Written to
+    /// <c>~/.gemini/antigravity-cli/mcp_config.json</c> on startup by
+    /// <see cref="Services.Acp.AgyMcpConfigHostedService"/>; the security policy
+    /// allows MCP tool calls only for the server names listed here (everything
+    /// else is auto-denied by headless agy). Note that a stdio MCP server saving
+    /// files must be able to write under the per-chat workspace — the default
+    /// gallerydl entry relies on <see cref="WorkingDirectoryRoot"/> staying under
+    /// /tmp (its own AllowedPathPrefixes contain /tmp).
+    /// </summary>
+#pragma warning disable S5332 // plain http is intentional: container-to-container traffic on the internal compose network
+    public Dictionary<string, McpServer> McpServers { get; set; } = new()
+    {
+        ["gallerydl"] = new McpServer
+        {
+            Type = ServerType.Stdio,
+            Command = "dotnet",
+            Args = ["/opt/gallerydl-mcp/GalleryDl.McpServer.dll"],
+            Env = new Dictionary<string, string?>
+            {
+                ["GalleryDlApi__BaseUrl"] = "http://gallerydl-webapi:8080",
+                ["GalleryDlApi__MaxTake"] = "10",
+            },
+        },
+    };
+#pragma warning restore S5332
 
     /// <summary>
     /// Which set of agy <c>command(...)</c> permission rules to write into
