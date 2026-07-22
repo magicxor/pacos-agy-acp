@@ -138,14 +138,17 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         List<string> deny = [];
 
         // MCP tools: only the servers we ourselves publish to agy (mcp_config.json,
-        // see AgyMcpConfigHostedService) are allowed, by name and by name-prefixed
-        // tool id. There is deliberately NO blanket mcp(*) deny: Deny > Allow, so it
-        // would make these allows dead; headless agy is fail-closed and auto-denies
-        // every MCP tool that matches no allow rule anyway.
+        // see AgyMcpConfigHostedService) are allowed. mcp(...) targets are matched
+        // LITERALLY as "server/tool" ids; the only recognized wildcards are the
+        // global mcp(*) and the per-server mcp(server/*), and the regex: prefix is
+        // NOT supported for mcp (all verified empirically on agy 1.1.4 headless:
+        // mcp(name) and mcp(name*) never match and the tool call is auto-denied).
+        // There is deliberately NO blanket mcp(*) deny: Deny > Allow, so it would
+        // make these allows dead; headless agy is fail-closed and auto-denies every
+        // MCP tool that matches no allow rule anyway.
         foreach (var serverName in _mcpServerNames)
         {
-            allow.Add($"mcp({serverName})");
-            allow.Add($"mcp({serverName}*)");
+            allow.Add($"mcp({serverName}/*)");
         }
 
         // Grants/denies both read_file and write_file for a path in one call —
