@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Pacos.Constants;
 using Pacos.Models;
 using Pacos.Models.Options;
 
@@ -36,14 +37,14 @@ public sealed class AgyMcpConfigHostedService : IHostedService
     };
 
     private readonly ILogger<AgyMcpConfigHostedService> _logger;
-    private readonly Dictionary<string, McpServer> _mcpServers;
+    private readonly PacosOptions _options;
 
     public AgyMcpConfigHostedService(
         ILogger<AgyMcpConfigHostedService> logger,
         IOptions<PacosOptions> options)
     {
         _logger = logger;
-        _mcpServers = options.Value.McpServers;
+        _options = options.Value;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -68,13 +69,17 @@ public sealed class AgyMcpConfigHostedService : IHostedService
         {
             Directory.CreateDirectory(directory);
 
-            await File.WriteAllTextAsync(configPath, BuildConfigJson(_mcpServers), cancellationToken);
+            var workspaceRoot = AcpSessionPool.ResolveRoot(_options);
+            await File.WriteAllTextAsync(
+                configPath,
+                BuildConfigJson(_options.McpServers, workspaceRoot),
+                cancellationToken);
 
             _logger.LogInformation(
                 "Wrote agy MCP config at {ConfigPath} ({ServerCount} server(s): {ServerNames})",
                 configPath,
-                _mcpServers.Count,
-                string.Join(", ", _mcpServers.Keys));
+                _options.McpServers.Count,
+                string.Join(", ", _options.McpServers.Keys));
         }
         catch (Exception e)
         {
@@ -86,9 +91,39 @@ public sealed class AgyMcpConfigHostedService : IHostedService
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>
-    /// Renders the mcp_config.json content. Kept separate (and public) so tests can pin the
-    /// exact JSON shape agy expects — stdio entries must come out as bare command/args/env.
+    /// Renders the mcp_config.json content, replacing <see cref="Const.WorkspaceRootPlaceholder"/>
+    /// in env values with <paramref name="workspaceRoot"/> (the source dictionary is never
+    /// mutated — it is the live options singleton). Kept separate (and public) so tests can pin
+    /// the exact JSON shape agy expects — stdio entries must come out as bare command/args/env.
     /// </summary>
-    public static string BuildConfigJson(Dictionary<string, McpServer> mcpServers) =>
-        JsonSerializer.Serialize(new McpRoot { McpServers = mcpServers }, ConfigJsonOptions);
+    public static string BuildConfigJson(Dictionary<string, McpServer> mcpServers, string workspaceRoot)
+    {
+        var servers = mcpServers.ToDictionary(
+            pair => pair.Key,
+            pair => SubstituteWorkspaceRoot(pair.Value, workspaceRoot));
+
+        return JsonSerializer.Serialize(new McpRoot { McpServers = servers }, ConfigJsonOptions);
+    }
+
+    private static McpServer SubstituteWorkspaceRoot(McpServer server, string workspaceRoot)
+    {
+        if (server.Env is not { Count: > 0 } env)
+        {
+            return server;
+        }
+
+        return new McpServer
+        {
+            Type = server.Type,
+            Name = server.Name,
+            Command = server.Command,
+            Args = server.Args,
+            Env = env.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value?.Replace(Const.WorkspaceRootPlaceholder, workspaceRoot, StringComparison.Ordinal)),
+            EnvFile = server.EnvFile,
+            Url = server.Url,
+            Headers = server.Headers,
+        };
+    }
 }

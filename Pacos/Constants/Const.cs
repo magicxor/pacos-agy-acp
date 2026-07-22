@@ -61,6 +61,10 @@ public static class Const
                                                     - Если инструмент вернул ошибку, покажи пользователю её текст.
                                                     """;
 
+    // Placeholder usable in MCP server env values (PacosOptions.McpServers); replaced
+    // at startup with the resolved workspace root by AgyMcpConfigHostedService.
+    public const string WorkspaceRootPlaceholder = "{workspaceRoot}";
+
     public const int MaxTelegramMessageLength = 4096;
     public const int MaxTelegramRichMessageLength = 32768;
     public const int MaxTelegramCaptionLength = 1024;

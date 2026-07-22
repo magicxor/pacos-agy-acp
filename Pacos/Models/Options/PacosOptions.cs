@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Pacos.Constants;
 
 namespace Pacos.Models.Options;
 
@@ -66,10 +67,10 @@ public sealed class PacosOptions
     /// <c>~/.gemini/config/mcp_config.json</c> on startup by
     /// <see cref="Services.Acp.AgyMcpConfigHostedService"/>; the security policy
     /// allows MCP tool calls only for the server names listed here (everything
-    /// else is auto-denied by headless agy). Note that a stdio MCP server saving
-    /// files must be able to write under the per-chat workspace — the default
-    /// gallerydl entry relies on <see cref="WorkingDirectoryRoot"/> staying under
-    /// /tmp (its own AllowedPathPrefixes contain /tmp).
+    /// else is auto-denied by headless agy). Env values may contain
+    /// <see cref="Const.WorkspaceRootPlaceholder"/>, which is replaced at startup
+    /// with the resolved workspace root (<see cref="Services.Acp.AcpSessionPool.ResolveRoot"/>),
+    /// so file-saving allow-lists always track <see cref="WorkingDirectoryRoot"/>.
     /// </summary>
 #pragma warning disable S5332 // plain http is intentional: container-to-container traffic on the internal compose network
     public Dictionary<string, McpServer> McpServers { get; set; } = new()
@@ -82,6 +83,11 @@ public sealed class PacosOptions
             {
                 ["GalleryDlApi__BaseUrl"] = "http://gallerydl-webapi:8080",
                 ["GalleryDlApi__MaxTake"] = "10",
+                // The appsettings.json shipped with the server allows ["/downloads", "/tmp"];
+                // .NET config merges arrays per index, so BOTH indexes must be overridden
+                // to pin the allow-list to the workspace root alone.
+                ["GalleryDlApi__AllowedPathPrefixes__0"] = Const.WorkspaceRootPlaceholder,
+                ["GalleryDlApi__AllowedPathPrefixes__1"] = Const.WorkspaceRootPlaceholder,
             },
         },
     };
