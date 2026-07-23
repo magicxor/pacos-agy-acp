@@ -67,6 +67,10 @@ jobs:
             export PACOS__ALLOWEDCHATIDS__8='${{ vars.PACOS__ALLOWEDCHATIDS__8 }}'
             export PACOS__ALLOWEDCHATIDS__9='${{ vars.PACOS__ALLOWEDCHATIDS__9 }}'
             export PACOS__CHATMODEL='${{ vars.PACOS__CHATMODEL }}'
+            # Shared bearer token for the crawl4ai sidecar. docker-compose.deploy.yml interpolates
+            # it into both the crawl4ai service (CRAWL4AI_API_TOKEN) and the pacos service
+            # (Pacos__Crawl4AiApiToken), so the sidecar binds 0.0.0.0 and the MCP authenticates.
+            export CRAWL4AI_API_TOKEN='${{ secrets.CRAWL4AI_API_TOKEN }}'
 
             docker pull "$PACOS_IMAGE"
             docker volume create "$AGY_VOLUME_NAME"
