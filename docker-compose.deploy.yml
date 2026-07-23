@@ -39,9 +39,15 @@ services:
   # the pacos container (spawned by agy). Reachable only on the compose network
   # as http://gallerydl-webapi:8080 - no published ports.
   gallerydl-webapi:
-    image: ghcr.io/magicxor/gallerydl-webapi:0.2.2
+    image: ghcr.io/magicxor/gallerydl-webapi:0.2.3
     container_name: ${CONTAINER_NAME}-gallerydl-webapi
     restart: always
+    volumes:
+      # gallery-dl credentials (rule34/gelbooru/e621/danbooru/wallhaven), materialized
+      # next to this file by deploy_latest.yml from the GALLERYDL_CONFIG secret.
+      # /etc/gallery-dl.conf is a system-wide config path gallery-dl reads regardless of
+      # which user the container process runs as.
+      - ./gallery-dl.conf:/etc/gallery-dl.conf:ro
     networks:
       - pacos-net
 

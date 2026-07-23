@@ -11,6 +11,7 @@ using Pacos.Services.Acp;
 using Pacos.Services.BackgroundTasks;
 using Pacos.Services.ChatCommandHandlers;
 using Pacos.Services.GenerativeAi;
+using Pacos.Services.ImageConversion;
 using Pacos.Services.Markdown;
 using Pacos.Services.VideoConversion;
 using Telegram.Bot;
@@ -69,6 +70,7 @@ public sealed class Program
                         });
 
                     services.AddSingleton<VideoConverter>();
+                    services.AddSingleton<ImageDownscaler>();
                     services.AddSingleton<TimeProvider>(_ => TimeProvider.System);
                     services.AddSingleton<ITelegramBotClient>(s => new TelegramBotClient(
                             s.GetRequiredService<IOptions<PacosOptions>>().Value.TelegramBotApiKey,

@@ -1,5 +1,6 @@
 using Pacos.Constants;
 using Pacos.Models;
+using Pacos.Services.ImageConversion;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 
@@ -11,7 +12,9 @@ namespace Pacos.Services;
 /// media album; every other file is grouped into a single document group. Each
 /// group is capped at <see cref="Const.MaxTelegramMediaGroupSize"/> items
 /// (dropping the alphabetically-last overflow), and any image/video whose name
-/// contains "nsfw" is covered with a spoiler.
+/// contains "nsfw" is covered with a spoiler. Videos and documents larger than
+/// <see cref="Const.MaxTelegramFileSizeBytes"/> are dropped with a warning,
+/// since (unlike photos) they cannot be downscaled to fit Telegram's limit.
 /// </summary>
 public sealed class OutputFileSender
 {
@@ -21,10 +24,12 @@ public sealed class OutputFileSender
     private static readonly string[] VideoExtensions = [".mp4"];
 
     private readonly ILogger<OutputFileSender> _logger;
+    private readonly ImageDownscaler _imageDownscaler;
 
-    public OutputFileSender(ILogger<OutputFileSender> logger)
+    public OutputFileSender(ILogger<OutputFileSender> logger, ImageDownscaler imageDownscaler)
     {
         _logger = logger;
+        _imageDownscaler = imageDownscaler;
     }
 
     /// <summary>
@@ -40,8 +45,11 @@ public sealed class OutputFileSender
         string? caption,
         CancellationToken cancellationToken)
     {
-        var (media, documents, droppedMedia, droppedDocuments) = BuildPlan(files);
+        var (media, documents, droppedMedia, droppedDocuments, oversized) = BuildPlan(files);
 
+        media = [.. media.Select(DownscaleIfOversized)];
+
+        LogOversizedFiles(oversized);
         LogDroppedFiles("images/videos", media.Select(static m => m.File.FileName), droppedMedia);
         LogDroppedFiles("documents", documents.Select(static f => f.FileName), droppedDocuments);
 
@@ -65,7 +73,8 @@ public sealed class OutputFileSender
     internal static (IReadOnlyList<PlannedMedia> Media,
                      IReadOnlyList<OutputFile> Documents,
                      IReadOnlyList<OutputFile> DroppedMedia,
-                     IReadOnlyList<OutputFile> DroppedDocuments)
+                     IReadOnlyList<OutputFile> DroppedDocuments,
+                     IReadOnlyList<OutputFile> DroppedOversized)
         BuildPlan(IReadOnlyCollection<OutputFile> files)
     {
         var mediaFiles = files
@@ -78,16 +87,31 @@ public sealed class OutputFileSender
             .OrderBy(static f => f.FileName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var media = mediaFiles
+        // Photos are downscaled to fit Telegram's limits, but videos and documents
+        // cannot be shrunk, so any that exceed the upload limit are dropped outright.
+        var oversized = mediaFiles
+            .Where(static f => IsVideo(f.FileName) && ExceedsUploadLimit(f))
+            .Concat(documentFiles.Where(static f => ExceedsUploadLimit(f)))
+            .OrderBy(static f => f.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var keptMediaFiles = mediaFiles
+            .Where(static f => !IsVideo(f.FileName) || !ExceedsUploadLimit(f))
+            .ToList();
+        var keptDocumentFiles = documentFiles
+            .Where(static f => !ExceedsUploadLimit(f))
+            .ToList();
+
+        var media = keptMediaFiles
             .Take(Const.MaxTelegramMediaGroupSize)
             .Select(static f => new PlannedMedia(f, GetMediaKind(f.FileName), HasNsfwMarker(f.FileName)))
             .ToList();
-        var droppedMedia = mediaFiles.Skip(Const.MaxTelegramMediaGroupSize).ToList();
+        var droppedMedia = keptMediaFiles.Skip(Const.MaxTelegramMediaGroupSize).ToList();
 
-        var documents = documentFiles.Take(Const.MaxTelegramMediaGroupSize).ToList();
-        var droppedDocuments = documentFiles.Skip(Const.MaxTelegramMediaGroupSize).ToList();
+        var documents = keptDocumentFiles.Take(Const.MaxTelegramMediaGroupSize).ToList();
+        var droppedDocuments = keptDocumentFiles.Skip(Const.MaxTelegramMediaGroupSize).ToList();
 
-        return (media, documents, droppedMedia, droppedDocuments);
+        return (media, documents, droppedMedia, droppedDocuments, oversized);
     }
 
     private static bool IsMedia(string fileName) => IsImage(fileName) || IsVideo(fileName);
@@ -99,6 +123,8 @@ public sealed class OutputFileSender
     private static OutputMediaKind GetMediaKind(string fileName) => IsVideo(fileName) ? OutputMediaKind.Video : OutputMediaKind.Photo;
 
     private static bool HasNsfwMarker(string fileName) => fileName.Contains(NsfwMarker, StringComparison.OrdinalIgnoreCase);
+
+    private static bool ExceedsUploadLimit(OutputFile file) => file.Content.Length > Const.MaxTelegramFileSizeBytes;
 
     private static IAlbumInputMedia CreateAlbumMedia(PlannedMedia item, InputFile inputFile, string? caption)
     {
@@ -233,6 +259,12 @@ public sealed class OutputFileSender
         }
     }
 
+    private PlannedMedia DownscaleIfOversized(PlannedMedia item) =>
+        item.Kind == OutputMediaKind.Photo
+        && item.File.Content.Length > Const.MaxTelegramPhotoSizeBytes
+            ? item with { File = _imageDownscaler.FitWithinBounds(item.File) }
+            : item;
+
     private async Task<int> SendMediaAsync(
         ITelegramBotClient botClient,
         long chatId,
@@ -307,6 +339,20 @@ public sealed class OutputFileSender
                 string.Join(", ", documents.Select(static f => f.FileName)));
             return 0;
         }
+    }
+
+    private void LogOversizedFiles(IReadOnlyCollection<OutputFile> oversized)
+    {
+        if (oversized.Count == 0)
+        {
+            return;
+        }
+
+        _logger.LogWarning(
+            "Dropped {Count} output file(s) exceeding Telegram's upload limit of {LimitBytes} bytes: [{Files}]",
+            oversized.Count,
+            Const.MaxTelegramFileSizeBytes,
+            string.Join(", ", oversized.Select(static f => $"{f.FileName} ({f.Content.Length} bytes)")));
     }
 
     private void LogDroppedFiles(string category, IEnumerable<string> sentNames, IReadOnlyCollection<OutputFile> dropped)

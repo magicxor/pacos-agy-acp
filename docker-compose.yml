@@ -10,4 +10,4 @@ services:
   # gallery-dl backend for the GalleryDl MCP server (spawned by agy inside the
   # pacos container). Same wiring as production: http://gallerydl-webapi:8080.
   gallerydl-webapi:
-    image: ghcr.io/magicxor/gallerydl-webapi:0.2.2
+    image: ghcr.io/magicxor/gallerydl-webapi:0.2.3

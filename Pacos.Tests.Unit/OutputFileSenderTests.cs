@@ -1,3 +1,4 @@
+using Pacos.Constants;
 using Pacos.Models;
 using Pacos.Services;
 
@@ -14,11 +15,17 @@ internal sealed class OutputFileSenderTests
     private static readonly string[] DroppedImageNames = ["img11.png", "img12.png"];
     private static readonly string[] DroppedDocumentNames = ["doc11.pdf", "doc12.pdf"];
     private static readonly string[] NsfwReportName = ["nsfw_report.pdf"];
+    private static readonly string[] SmallVideoName = ["small.mp4"];
+    private static readonly string[] HugeVideoName = ["huge.mp4"];
+    private static readonly string[] SmallDocumentName = ["small.pdf"];
+    private static readonly string[] HugeDocumentName = ["huge.zip"];
+    private static readonly string[] HugePhotoName = ["huge.png"];
+    private static readonly string[] ExactDocumentName = ["exact.zip"];
 
     [Test]
     public void BuildPlan_WhenNoFiles_ShouldReturnEmptyGroups()
     {
-        var (media, documents, droppedMedia, droppedDocuments) = OutputFileSender.BuildPlan([]);
+        var (media, documents, droppedMedia, droppedDocuments, oversized) = OutputFileSender.BuildPlan([]);
 
         Assert.Multiple(() =>
         {
@@ -26,6 +33,7 @@ internal sealed class OutputFileSenderTests
             Assert.That(documents, Is.Empty);
             Assert.That(droppedMedia, Is.Empty);
             Assert.That(droppedDocuments, Is.Empty);
+            Assert.That(oversized, Is.Empty);
         });
     }
 
@@ -46,7 +54,7 @@ internal sealed class OutputFileSenderTests
             MakeFile("j.zip"),
         };
 
-        var (media, documents, droppedMedia, droppedDocuments) = OutputFileSender.BuildPlan(files);
+        var (media, documents, droppedMedia, droppedDocuments, oversized) = OutputFileSender.BuildPlan(files);
 
         Assert.Multiple(() =>
         {
@@ -54,13 +62,14 @@ internal sealed class OutputFileSenderTests
             Assert.That(documents.Select(d => d.FileName), Is.EquivalentTo(AllDocumentNames));
             Assert.That(droppedMedia, Is.Empty);
             Assert.That(droppedDocuments, Is.Empty);
+            Assert.That(oversized, Is.Empty);
         });
     }
 
     [Test]
     public void BuildPlan_ShouldTreatExtensionsCaseInsensitively()
     {
-        var (media, documents, _, _) = OutputFileSender.BuildPlan([MakeFile("PHOTO.JPG"), MakeFile("CLIP.MP4"), MakeFile("DOC.PDF")]);
+        var (media, documents, _, _, _) = OutputFileSender.BuildPlan([MakeFile("PHOTO.JPG"), MakeFile("CLIP.MP4"), MakeFile("DOC.PDF")]);
 
         Assert.Multiple(() =>
         {
@@ -81,7 +90,7 @@ internal sealed class OutputFileSenderTests
             MakeFile("m.pdf"),
         };
 
-        var (media, documents, _, _) = OutputFileSender.BuildPlan(files);
+        var (media, documents, _, _, _) = OutputFileSender.BuildPlan(files);
 
         Assert.Multiple(() =>
         {
@@ -93,7 +102,7 @@ internal sealed class OutputFileSenderTests
     [Test]
     public void BuildPlan_ShouldTagVideosAndPhotosWithTheCorrectKind()
     {
-        var (media, _, _, _) = OutputFileSender.BuildPlan([MakeFile("clip.mp4"), MakeFile("pic.png")]);
+        var (media, _, _, _, _) = OutputFileSender.BuildPlan([MakeFile("clip.mp4"), MakeFile("pic.png")]);
 
         Assert.Multiple(() =>
         {
@@ -107,7 +116,7 @@ internal sealed class OutputFileSenderTests
     {
         var files = Enumerable.Range(1, 12).Select(i => MakeFile($"img{i:D2}.png")).ToArray();
 
-        var (media, _, droppedMedia, _) = OutputFileSender.BuildPlan(files);
+        var (media, _, droppedMedia, _, _) = OutputFileSender.BuildPlan(files);
 
         Assert.Multiple(() =>
         {
@@ -121,7 +130,7 @@ internal sealed class OutputFileSenderTests
     {
         var files = Enumerable.Range(1, 12).Select(i => MakeFile($"doc{i:D2}.pdf")).ToArray();
 
-        var (_, documents, _, droppedDocuments) = OutputFileSender.BuildPlan(files);
+        var (_, documents, _, droppedDocuments, _) = OutputFileSender.BuildPlan(files);
 
         Assert.Multiple(() =>
         {
@@ -137,7 +146,7 @@ internal sealed class OutputFileSenderTests
             .Concat(Enumerable.Range(1, 12).Select(i => MakeFile($"doc{i:D2}.pdf")))
             .ToArray();
 
-        var (media, documents, droppedMedia, droppedDocuments) = OutputFileSender.BuildPlan(files);
+        var (media, documents, droppedMedia, droppedDocuments, _) = OutputFileSender.BuildPlan(files);
 
         Assert.Multiple(() =>
         {
@@ -156,7 +165,7 @@ internal sealed class OutputFileSenderTests
     [TestCase("safe_clip.mp4", false)]
     public void BuildPlan_ShouldFlagSpoilerWhenMediaNameContainsNsfw(string fileName, bool expected)
     {
-        var (media, _, _, _) = OutputFileSender.BuildPlan([MakeFile(fileName)]);
+        var (media, _, _, _, _) = OutputFileSender.BuildPlan([MakeFile(fileName)]);
 
         Assert.That(media, Has.Count.EqualTo(1));
         Assert.That(media[0].HasSpoiler, Is.EqualTo(expected));
@@ -165,7 +174,7 @@ internal sealed class OutputFileSenderTests
     [Test]
     public void BuildPlan_WhenDocumentNameContainsNsfw_ShouldStayInDocuments()
     {
-        var (media, documents, _, _) = OutputFileSender.BuildPlan([MakeFile("nsfw_report.pdf")]);
+        var (media, documents, _, _, _) = OutputFileSender.BuildPlan([MakeFile("nsfw_report.pdf")]);
 
         Assert.Multiple(() =>
         {
@@ -174,5 +183,67 @@ internal sealed class OutputFileSenderTests
         });
     }
 
+    [Test]
+    public void BuildPlan_WhenVideoExceedsUploadLimit_ShouldDropItAsOversized()
+    {
+        var files = new[]
+        {
+            MakeFile("small.mp4", 1024),
+            MakeFile("huge.mp4", Const.MaxTelegramFileSizeBytes + 1),
+        };
+
+        var (media, _, _, _, oversized) = OutputFileSender.BuildPlan(files);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(SmallVideoName));
+            Assert.That(oversized.Select(f => f.FileName), Is.EqualTo(HugeVideoName));
+        });
+    }
+
+    [Test]
+    public void BuildPlan_WhenDocumentExceedsUploadLimit_ShouldDropItAsOversized()
+    {
+        var files = new[]
+        {
+            MakeFile("small.pdf", 1024),
+            MakeFile("huge.zip", Const.MaxTelegramFileSizeBytes + 1),
+        };
+
+        var (_, documents, _, _, oversized) = OutputFileSender.BuildPlan(files);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(documents.Select(d => d.FileName), Is.EqualTo(SmallDocumentName));
+            Assert.That(oversized.Select(f => f.FileName), Is.EqualTo(HugeDocumentName));
+        });
+    }
+
+    [Test]
+    public void BuildPlan_WhenPhotoExceedsUploadLimit_ShouldKeepItForDownscaling()
+    {
+        var (media, _, _, _, oversized) = OutputFileSender.BuildPlan([MakeFile("huge.png", Const.MaxTelegramFileSizeBytes + 1)]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(HugePhotoName));
+            Assert.That(oversized, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void BuildPlan_WhenFileIsExactlyAtUploadLimit_ShouldKeepIt()
+    {
+        var (_, documents, _, _, oversized) = OutputFileSender.BuildPlan([MakeFile("exact.zip", Const.MaxTelegramFileSizeBytes)]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(documents.Select(d => d.FileName), Is.EqualTo(ExactDocumentName));
+            Assert.That(oversized, Is.Empty);
+        });
+    }
+
     private static OutputFile MakeFile(string fileName) => new(fileName, []);
+
+    private static OutputFile MakeFile(string fileName, int sizeBytes) => new(fileName, new byte[sizeBytes]);
 }
