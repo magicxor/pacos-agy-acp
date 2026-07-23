@@ -38,13 +38,19 @@ public sealed class AcpSessionPool : IAsyncDisposable
 
     /// <summary>
     /// Resolves the root directory under which per-chat working directories live.
-    /// Shared with the security policy so the MCP filesystem allow-list matches.
+    /// Shared with the security policy and the MCP config so the filesystem allow-list
+    /// matches. Any trailing path separator is trimmed here (the single source of truth):
+    /// a configured value like "/data/work/" would otherwise be inlined into the FileMove
+    /// target regex as "...//[^/]+/..." and never match the real, Path.Combine-normalized
+    /// output path, silently denying every file delivery.
     /// </summary>
     public static string ResolveRoot(PacosOptions options)
     {
-        return string.IsNullOrWhiteSpace(options.WorkingDirectoryRoot)
+        var root = string.IsNullOrWhiteSpace(options.WorkingDirectoryRoot)
             ? Path.Combine(Path.GetTempPath(), "pacos-agy")
             : options.WorkingDirectoryRoot;
+
+        return root.TrimEnd('/', '\\');
     }
 
     /// <summary>

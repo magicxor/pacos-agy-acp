@@ -128,6 +128,26 @@ internal sealed class AgyMcpConfigTests
     }
 
     [Test]
+    public void ResolveRoot_TrimsTrailingSeparatorSoTargetPatternHasNoDoubleSlash()
+    {
+        // A configured root with a trailing separator must not leak a doubled separator into
+        // the FileMove target regex (which would never match the real output path).
+        var options = CreateOptions();
+        options.WorkingDirectoryRoot = "/data/work/";
+
+        var root = AcpSessionPool.ResolveRoot(options);
+        var json = AgyMcpConfigHostedService.BuildConfigJson(options.McpServers, root, BrainDir);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(root, Is.EqualTo("/data/work"));
+            Assert.That(
+                GetServer(json, "filemcp")["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
+                Is.EqualTo(@"^/data/work/[^/]+/\.turns/[^/]+/output(/.*)?$"));
+        });
+    }
+
+    [Test]
     public void BuildConfigJson_SseServer_EmitsLowercaseTypeAndUrl()
     {
         var servers = new Dictionary<string, McpServer>
