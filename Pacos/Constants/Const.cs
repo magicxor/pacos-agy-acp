@@ -68,6 +68,12 @@ public static class Const
     // replaced at startup with the regex-escaped agy brain staging dir by AgyMcpConfigHostedService.
     public const string BrainDirPlaceholder = "{brainDir}";
 
+    // Placeholder for the regex-escaped workspace root, for use inside FileMove regex patterns.
+    // Distinct from WorkspaceRootPlaceholder, which is substituted raw (gallerydl consumes it as
+    // a literal path prefix and must keep it unescaped). Replaced at startup by
+    // AgyMcpConfigHostedService.
+    public const string WorkspaceRootPatternPlaceholder = "{workspaceRootPattern}";
+
     public const int MaxTelegramMessageLength = 4096;
     public const int MaxTelegramRichMessageLength = 32768;
     public const int MaxTelegramCaptionLength = 1024;

@@ -102,11 +102,13 @@ public sealed class PacosOptions
                 // delivering a generated file from the agy brain staging dir into the
                 // per-turn output dir, so the source is pinned to the brain dir and the
                 // target to the per-turn output dir (<root>/<chatId>/.turns/<turnId>/output).
-                // {workspaceRoot} is a plain /tmp path with no regex metacharacters (safe
-                // to inline raw); {brainDir} is regex-escaped during substitution because
-                // the brain path contains '.' (see AgyMcpConfigHostedService).
+                // Both {brainDir} and {workspaceRootPattern} are regex-escaped during
+                // substitution: WorkingDirectoryRoot is user-configurable and may contain regex
+                // metacharacters, so it must not be inlined raw into these patterns. The plain
+                // {workspaceRoot} placeholder is deliberately NOT used here — it stays raw for
+                // gallerydl's literal path prefix (see AgyMcpConfigHostedService).
                 ["FileMove__AllowedSourcePatterns__0"] = $"^{Const.BrainDirPlaceholder}(/.*)?$",
-                ["FileMove__AllowedTargetPatterns__0"] = $"^{Const.WorkspaceRootPlaceholder}/[^/]+/\\.turns/[^/]+/output(/.*)?$",
+                ["FileMove__AllowedTargetPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/output(/.*)?$",
                 // Per-turn files are destroyed once the turn ends, so any file the agent
                 // can legitimately move was created during the current turn (bounded by
                 // PromptTimeoutSeconds, default 300s). Keep this a tight, turn-scoped

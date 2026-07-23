@@ -109,6 +109,25 @@ internal sealed class AgyMcpConfigTests
     }
 
     [Test]
+    public void BuildConfigJson_FileMcpTargetPattern_RegexEscapesConfigurableWorkspaceRoot()
+    {
+        // A user-configured WorkingDirectoryRoot may contain regex metacharacters; they must be
+        // escaped inside the FileMove target regex, yet left raw in gallerydl's literal prefix.
+        const string root = "/srv/p.g+1";
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, root, BrainDir);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                GetServer(json, "filemcp")["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
+                Is.EqualTo(@"^/srv/p\.g\+1/[^/]+/\.turns/[^/]+/output(/.*)?$"));
+            Assert.That(
+                GetServer(json, "gallerydl")["env"]?["GalleryDlApi__AllowedPathPrefixes__0"]?.GetValue<string>(),
+                Is.EqualTo(root));
+        });
+    }
+
+    [Test]
     public void BuildConfigJson_SseServer_EmitsLowercaseTypeAndUrl()
     {
         var servers = new Dictionary<string, McpServer>
