@@ -132,7 +132,7 @@ internal sealed class AgyMcpConfigTests
             // the array so a single index-0 override fully defines the allow-list (no index 1).
             Assert.That(
                 crawl4ai["env"]?["Crawl4Ai__AllowedOutputPatterns__0"]?.GetValue<string>(),
-                Is.EqualTo($"^{WorkspaceRoot}/[^/]+/\\.turns/[^/]+/output(/.*)?$"));
+                Is.EqualTo($"^{WorkspaceRoot}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$"));
             Assert.That(
                 crawl4ai["env"]?.AsObject().ContainsKey("Crawl4Ai__AllowedOutputPatterns__1"),
                 Is.False);

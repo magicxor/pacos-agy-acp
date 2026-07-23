@@ -5,18 +5,21 @@ namespace Pacos.Services.Acp;
 /// <summary>
 /// A per-turn scratch area underneath a chat's agy working directory. Files the
 /// user attached are written into <see cref="InputDirectory"/>; files the agent
-/// is asked to produce are collected from <see cref="OutputDirectory"/>. The
-/// whole turn directory is deleted on disposal.
+/// is asked to deliver are collected from <see cref="OutputDirectory"/> and sent to
+/// the user; <see cref="TempDirectory"/> is agent scratch space (e.g. something it
+/// downloaded only to read) that is never collected or sent. The whole turn
+/// directory — input, output and temp alike — is deleted on disposal.
 /// </summary>
 public sealed class TempWorkspace : IDisposable
 {
     private const string TurnsFolderName = ".turns";
 
-    private TempWorkspace(string turnDirectory, string inputDirectory, string outputDirectory)
+    private TempWorkspace(string turnDirectory, string inputDirectory, string outputDirectory, string tempDirectory)
     {
         TurnDirectory = turnDirectory;
         InputDirectory = inputDirectory;
         OutputDirectory = outputDirectory;
+        TempDirectory = tempDirectory;
     }
 
     public string TurnDirectory { get; }
@@ -25,17 +28,26 @@ public sealed class TempWorkspace : IDisposable
 
     public string OutputDirectory { get; }
 
+    /// <summary>
+    /// Agent scratch space for files it needs during the turn but that must NOT be
+    /// delivered to the user (e.g. a page it downloaded only to read). Never collected
+    /// by <see cref="CollectOutputFiles"/>; removed with the rest of the turn on disposal.
+    /// </summary>
+    public string TempDirectory { get; }
+
     public static TempWorkspace Create(string chatWorkingDir)
     {
         var turnId = Guid.NewGuid().ToString("N");
         var turnDirectory = Path.Combine(chatWorkingDir, TurnsFolderName, turnId);
         var inputDirectory = Path.Combine(turnDirectory, "input");
         var outputDirectory = Path.Combine(turnDirectory, "output");
+        var tempDirectory = Path.Combine(turnDirectory, "temp");
 
         Directory.CreateDirectory(inputDirectory);
         Directory.CreateDirectory(outputDirectory);
+        Directory.CreateDirectory(tempDirectory);
 
-        return new TempWorkspace(turnDirectory, inputDirectory, outputDirectory);
+        return new TempWorkspace(turnDirectory, inputDirectory, outputDirectory, tempDirectory);
     }
 
     /// <summary>

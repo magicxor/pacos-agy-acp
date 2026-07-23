@@ -130,12 +130,13 @@ public sealed class PacosOptions
                 ["Crawl4Ai__BaseUrl"] = "http://crawl4ai:11235",
                 // The Dockerfile empties AllowedOutputPatterns in the server's appsettings.json
                 // at image build time, so this single index-0 override fully defines the allow-list
-                // (an empty list is deny-all). Constrain writes to the per-turn output dir only, so
-                // crawled artifacts land exactly where the bot forwards them to Telegram. The
-                // regex-escaped {workspaceRootPattern} is used (not the raw {workspaceRoot}) because
+                // (an empty list is deny-all). Constrain writes to the per-turn output dir (delivered
+                // to the user) and the per-turn temp dir (agent scratch for downloads it only needs to
+                // read — never delivered); both are removed when the turn ends. The regex-escaped
+                // {workspaceRootPattern} is used (not the raw {workspaceRoot}) because
                 // WorkingDirectoryRoot is user-configurable and may contain regex metacharacters
                 // (see AgyMcpConfigHostedService).
-                ["Crawl4Ai__AllowedOutputPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/output(/.*)?$",
+                ["Crawl4Ai__AllowedOutputPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$",
             },
         },
     };
