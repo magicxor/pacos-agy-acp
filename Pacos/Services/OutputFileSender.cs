@@ -57,7 +57,7 @@ public sealed class OutputFileSender
         // which Telegram does not support for documents.
         var (media, documents, droppedMedia, droppedDocuments, oversized) = BuildPlan(
             files,
-            file => imageDimensions.TryGetValue(file.FileName, out var dimensions)
+            file => imageDimensions.TryGetValue(file, out var dimensions)
                 && ImageDownscaler.ExceedsAspectRatioLimit(dimensions.Width, dimensions.Height, Const.MaxTelegramPhotoMaxAspectRatio));
 
         media = [.. media.Select(item => DownscaleIfOversized(item, imageDimensions))];
@@ -149,9 +149,9 @@ public sealed class OutputFileSender
     // also flattens an animated GIF/WebP to a static JPEG.
     private static bool NeedsDownscaling(
         OutputFile file,
-        IReadOnlyDictionary<string, (int Width, int Height)> imageDimensions) =>
+        IReadOnlyDictionary<OutputFile, (int Width, int Height)> imageDimensions) =>
         file.Content.Length > Const.MaxTelegramPhotoSizeBytes
-        || (imageDimensions.TryGetValue(file.FileName, out var dimensions)
+        || (imageDimensions.TryGetValue(file, out var dimensions)
             && ImageDownscaler.ExceedsSemiperimeter(dimensions.Width, dimensions.Height, Const.MaxTelegramPhotoSemiperimeter));
 
     private static IAlbumInputMedia CreateAlbumMedia(PlannedMedia item, InputFile inputFile, string? caption)
@@ -287,14 +287,17 @@ public sealed class OutputFileSender
         }
     }
 
-    private Dictionary<string, (int Width, int Height)> MeasureImages(IReadOnlyCollection<OutputFile> files)
+    // Keyed by the OutputFile instance rather than its file name: CollectOutputFiles
+    // flattens subdirectories to base names, so images from different folders can
+    // share a name; keying by name would let one image's dimensions mask another's.
+    private Dictionary<OutputFile, (int Width, int Height)> MeasureImages(IReadOnlyCollection<OutputFile> files)
     {
-        var dimensions = new Dictionary<string, (int Width, int Height)>(StringComparer.Ordinal);
+        var dimensions = new Dictionary<OutputFile, (int Width, int Height)>();
         foreach (var file in files.Where(static f => IsImage(f.FileName)))
         {
             if (_imageDownscaler.TryGetDimensions(file) is { } size)
             {
-                dimensions[file.FileName] = size;
+                dimensions[file] = size;
             }
         }
 
@@ -307,7 +310,7 @@ public sealed class OutputFileSender
     // discard detail.
     private PlannedMedia DownscaleIfOversized(
         PlannedMedia item,
-        IReadOnlyDictionary<string, (int Width, int Height)> imageDimensions) =>
+        IReadOnlyDictionary<OutputFile, (int Width, int Height)> imageDimensions) =>
         item.Kind == OutputMediaKind.Photo && NeedsDownscaling(item.File, imageDimensions)
             ? item with { File = _imageDownscaler.FitWithinBounds(item.File) }
             : item;
