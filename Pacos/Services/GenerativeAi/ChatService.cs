@@ -115,7 +115,7 @@ public sealed class ChatService : IAsyncDisposable
             .Append("[SYSTEM: Выходная директория для файлов: ")
             .Append(outputDirectory)
             .AppendLine("]")
-            .Append("[SYSTEM: Временная рабочая директория (для файлов, которые нужны тебе для работы, но которые НЕ надо отправлять пользователю; её содержимое пользователю не отправляется и удаляется после ответа): ")
+            .Append("[SYSTEM: Временная директория (не отправляется пользователю): ")
             .Append(tempDirectory)
             .AppendLine("]")
             .AppendLine();
@@ -152,6 +152,8 @@ public sealed class ChatService : IAsyncDisposable
                + Const.FileDeliveryRuleSystemPrompt
                + Environment.NewLine + Environment.NewLine
                + Const.GalleryDownloadRuleSystemPrompt
+               + Environment.NewLine + Environment.NewLine
+               + Const.Crawl4AiRuleSystemPrompt
                + Environment.NewLine + Environment.NewLine
                + $"Дата начала текущей сессии: {sessionStart}";
     }
