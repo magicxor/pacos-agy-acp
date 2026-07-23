@@ -42,7 +42,9 @@ public sealed class AcpSessionPool : IAsyncDisposable
     /// matches. Any trailing path separator is trimmed here (the single source of truth):
     /// a configured value like "/data/work/" would otherwise be inlined into the FileMove
     /// target regex as "...//[^/]+/..." and never match the real, Path.Combine-normalized
-    /// output path, silently denying every file delivery.
+    /// output path, silently denying every file delivery. Path.TrimEndingDirectorySeparator
+    /// preserves filesystem roots ("/" and "C:\" stay intact rather than collapsing to an
+    /// empty or non-absolute path).
     /// </summary>
     public static string ResolveRoot(PacosOptions options)
     {
@@ -50,7 +52,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
             ? Path.Combine(Path.GetTempPath(), "pacos-agy")
             : options.WorkingDirectoryRoot;
 
-        return root.TrimEnd('/', '\\');
+        return Path.TrimEndingDirectorySeparator(root);
     }
 
     /// <summary>
