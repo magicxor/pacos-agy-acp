@@ -80,6 +80,10 @@ public static class Const
     // AgyMcpConfigHostedService.
     public const string WorkspaceRootPatternPlaceholder = "{workspaceRootPattern}";
 
+    // Placeholder for the crawl4ai REST API bearer token. Substituted raw into the crawl4ai MCP
+    // server env at startup with PacosOptions.Crawl4AiApiToken by AgyMcpConfigHostedService.
+    public const string Crawl4AiApiTokenPlaceholder = "{crawl4aiApiToken}";
+
     public const int MaxTelegramMessageLength = 4096;
     public const int MaxTelegramRichMessageLength = 32768;
     public const int MaxTelegramCaptionLength = 1024;

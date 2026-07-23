@@ -74,7 +74,7 @@ public sealed class AgyMcpConfigHostedService : IHostedService
             var brainDirectory = $"{home.Replace('\\', '/').TrimEnd('/')}/.gemini/antigravity-cli/brain";
             await File.WriteAllTextAsync(
                 configPath,
-                BuildConfigJson(_options.McpServers, workspaceRoot, brainDirectory),
+                BuildConfigJson(_options.McpServers, workspaceRoot, brainDirectory, _options.Crawl4AiApiToken ?? string.Empty),
                 cancellationToken);
 
             _logger.LogInformation(
@@ -93,15 +93,16 @@ public sealed class AgyMcpConfigHostedService : IHostedService
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>
-    /// Renders the mcp_config.json content, substituting the workspace-root and brain-dir
-    /// placeholders in env values: <see cref="Const.WorkspaceRootPlaceholder"/> raw (for literal
-    /// path prefixes) and <see cref="Const.WorkspaceRootPatternPlaceholder"/> /
+    /// Renders the mcp_config.json content, substituting the workspace-root, brain-dir and
+    /// crawl4ai-token placeholders in env values: <see cref="Const.WorkspaceRootPlaceholder"/> and
+    /// <see cref="Const.Crawl4AiApiTokenPlaceholder"/> raw (a literal path prefix and a bearer
+    /// token respectively) and <see cref="Const.WorkspaceRootPatternPlaceholder"/> /
     /// <see cref="Const.BrainDirPlaceholder"/> regex-escaped (for FileMove regex patterns). The
     /// source dictionary is never mutated — it is the live options singleton. Kept separate (and
     /// public) so tests can pin the exact JSON shape agy expects — stdio entries must come out as
     /// bare command/args/env.
     /// </summary>
-    public static string BuildConfigJson(Dictionary<string, McpServer> mcpServers, string workspaceRoot, string brainDirectory)
+    public static string BuildConfigJson(Dictionary<string, McpServer> mcpServers, string workspaceRoot, string brainDirectory, string crawl4aiApiToken)
     {
         // Paths inlined into FileMove regex patterns must be regex-escaped: the brain path
         // contains '.', and WorkingDirectoryRoot is user-configurable and may contain other
@@ -112,12 +113,12 @@ public sealed class AgyMcpConfigHostedService : IHostedService
 
         var servers = mcpServers.ToDictionary(
             pair => pair.Key,
-            pair => SubstitutePlaceholders(pair.Value, workspaceRoot, workspaceRootPattern, brainPattern));
+            pair => SubstitutePlaceholders(pair.Value, workspaceRoot, workspaceRootPattern, brainPattern, crawl4aiApiToken));
 
         return JsonSerializer.Serialize(new McpRoot { McpServers = servers }, ConfigJsonOptions);
     }
 
-    private static McpServer SubstitutePlaceholders(McpServer server, string workspaceRoot, string workspaceRootPattern, string brainPattern)
+    private static McpServer SubstitutePlaceholders(McpServer server, string workspaceRoot, string workspaceRootPattern, string brainPattern, string crawl4aiApiToken)
     {
         if (server.Env is not { Count: > 0 } env)
         {
@@ -137,7 +138,8 @@ public sealed class AgyMcpConfigHostedService : IHostedService
                 pair => pair.Value
                     ?.Replace(Const.WorkspaceRootPatternPlaceholder, workspaceRootPattern, StringComparison.Ordinal)
                     .Replace(Const.WorkspaceRootPlaceholder, workspaceRoot, StringComparison.Ordinal)
-                    .Replace(Const.BrainDirPlaceholder, brainPattern, StringComparison.Ordinal)),
+                    .Replace(Const.BrainDirPlaceholder, brainPattern, StringComparison.Ordinal)
+                    .Replace(Const.Crawl4AiApiTokenPlaceholder, crawl4aiApiToken, StringComparison.Ordinal)),
             EnvFile = server.EnvFile,
             Url = server.Url,
             Headers = server.Headers,
