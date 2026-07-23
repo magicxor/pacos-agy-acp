@@ -21,6 +21,15 @@ internal sealed class OutputFileSenderTests
     private static readonly string[] HugeDocumentName = ["huge.zip"];
     private static readonly string[] HugePhotoName = ["huge.png"];
     private static readonly string[] ExactDocumentName = ["exact.zip"];
+    private static readonly string[] WideImageName = ["wide.png"];
+    private static readonly string[] NormalImageName = ["normal.png"];
+    private static readonly string[] ReroutedMediaNames = ["clip.mp4", "normal.png"];
+    private static readonly string[] ReroutedDocumentNames = ["doc.pdf", "wide.png"];
+    private static readonly string[] ClipOnlyName = ["clip.mp4"];
+    private static readonly string[] PicName = ["pic.png"];
+    private static readonly string[] DocPdfName = ["doc.pdf"];
+    private static readonly string[] DroppedPdfName = ["doc10.pdf"];
+    private static readonly string[] NsfwWideImageName = ["nsfw_wide.png"];
 
     [Test]
     public void BuildPlan_WhenNoFiles_ShouldReturnEmptyGroups()
@@ -240,6 +249,110 @@ internal sealed class OutputFileSenderTests
         {
             Assert.That(documents.Select(d => d.FileName), Is.EqualTo(ExactDocumentName));
             Assert.That(oversized, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void BuildPlan_WhenPredicateFlagsImage_ShouldRouteItToDocuments()
+    {
+        var (media, documents, _, _, _) = OutputFileSender.BuildPlan(
+            [MakeFile("wide.png"), MakeFile("normal.png")],
+            static f => f.FileName == "wide.png");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(NormalImageName));
+            Assert.That(documents.Select(d => d.FileName), Is.EqualTo(WideImageName));
+        });
+    }
+
+    [Test]
+    public void BuildPlan_WhenPredicateFlagsImage_ShouldLeaveOtherImagesAndVideosInMedia()
+    {
+        var files = new[]
+        {
+            MakeFile("wide.png"),
+            MakeFile("normal.png"),
+            MakeFile("clip.mp4"),
+            MakeFile("doc.pdf"),
+        };
+
+        var (media, documents, _, _, _) = OutputFileSender.BuildPlan(files, static f => f.FileName == "wide.png");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(ReroutedMediaNames));
+            Assert.That(documents.Select(d => d.FileName), Is.EqualTo(ReroutedDocumentNames));
+        });
+    }
+
+    [Test]
+    public void BuildPlan_WhenPredicateReturnsTrueForVideo_ShouldStillKeepItInMedia()
+    {
+        var (media, documents, _, _, _) = OutputFileSender.BuildPlan(
+            [MakeFile("clip.mp4"), MakeFile("pic.png")],
+            static _ => true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(ClipOnlyName));
+            Assert.That(documents.Select(d => d.FileName), Is.EqualTo(PicName));
+        });
+    }
+
+    [Test]
+    public void BuildPlan_WhenFlaggedImageExceedsUploadLimit_ShouldDropItAsOversized()
+    {
+        var (media, documents, _, _, oversized) = OutputFileSender.BuildPlan(
+            [MakeFile("wide.png", Const.MaxTelegramFileSizeBytes + 1)],
+            static f => f.FileName == "wide.png");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(media, Is.Empty);
+            Assert.That(documents, Is.Empty);
+            Assert.That(oversized.Select(f => f.FileName), Is.EqualTo(WideImageName));
+        });
+    }
+
+    [Test]
+    public void BuildPlan_WhenFlaggedImageJoinsDocuments_ShouldCountTowardTheDocumentCap()
+    {
+        var files = Enumerable.Range(1, 10).Select(i => MakeFile($"doc{i:D2}.pdf"))
+            .Append(MakeFile("0wide.png"))
+            .ToArray();
+
+        var (media, documents, _, droppedDocuments, _) = OutputFileSender.BuildPlan(files, static f => f.FileName == "0wide.png");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(media, Is.Empty);
+            Assert.That(documents, Has.Count.EqualTo(10));
+            Assert.That(droppedDocuments.Select(d => d.FileName), Is.EqualTo(DroppedPdfName));
+        });
+    }
+
+    [Test]
+    public void BuildPlan_WhenFlaggedImageIsNsfw_ShouldStillRouteItToDocuments()
+    {
+        var (media, documents, _, _, _) = OutputFileSender.BuildPlan([MakeFile("nsfw_wide.png")], static _ => true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(media, Is.Empty);
+            Assert.That(documents.Select(d => d.FileName), Is.EqualTo(NsfwWideImageName));
+        });
+    }
+
+    [Test]
+    public void BuildPlan_WithoutPredicate_ShouldRouteAllImagesToMedia()
+    {
+        var (media, documents, _, _, _) = OutputFileSender.BuildPlan([MakeFile("pic.png"), MakeFile("doc.pdf")]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(PicName));
+            Assert.That(documents.Select(d => d.FileName), Is.EqualTo(DocPdfName));
         });
     }
 
