@@ -15,6 +15,8 @@ internal sealed class AgyMcpConfigTests
 
     private static readonly string[] ExpectedGalleryDlArgs = ["/opt/gallerydl-mcp/GalleryDl.McpServer.dll"];
 
+    private static readonly string[] ExpectedFileMcpArgs = ["/opt/file-mcp/FileMcp.dll"];
+
     private static PacosOptions CreateOptions() => new()
     {
         TelegramBotApiKey = "123:abc",
@@ -62,6 +64,45 @@ internal sealed class AgyMcpConfigTests
             Assert.That(gallerydl.ContainsKey("headers"), Is.False);
             Assert.That(gallerydl.ContainsKey("envFile"), Is.False);
             Assert.That(gallerydl.ContainsKey("url"), Is.False);
+        });
+    }
+
+    [Test]
+    public void BuildConfigJson_DefaultFileMcpServer_MatchesAgyOnDiskFormat()
+    {
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot);
+        var filemcp = GetServer(json, "filemcp");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(filemcp["command"]?.GetValue<string>(), Is.EqualTo("dotnet"));
+            Assert.That(
+                filemcp["args"]?.AsArray().Select(node => node?.GetValue<string>()),
+                Is.EqualTo(ExpectedFileMcpArgs));
+
+            // Both allow-list patterns are pinned to the workspace subtree via the
+            // {workspaceRoot} placeholder; the baked appsettings.json empties the arrays
+            // so a single index-0 override fully defines each side (no index 1).
+            Assert.That(
+                filemcp["env"]?["FileMove__AllowedSourcePatterns__0"]?.GetValue<string>(),
+                Is.EqualTo($"^{WorkspaceRoot}(/.*)?$"));
+            Assert.That(
+                filemcp["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
+                Is.EqualTo($"^{WorkspaceRoot}(/.*)?$"));
+            Assert.That(
+                filemcp["env"]?.AsObject().ContainsKey("FileMove__AllowedSourcePatterns__1"),
+                Is.False);
+            Assert.That(
+                filemcp["env"]?.AsObject().ContainsKey("FileMove__AllowedTargetPatterns__1"),
+                Is.False);
+            Assert.That(filemcp["env"]?["FileMove__MaxFileAgeSeconds"]?.GetValue<string>(), Is.EqualTo("600"));
+
+            // agy's own on-disk format for stdio entries is bare command/args/env:
+            // no "type", "headers", "envFile" or "url" members may appear.
+            Assert.That(filemcp.ContainsKey("type"), Is.False);
+            Assert.That(filemcp.ContainsKey("headers"), Is.False);
+            Assert.That(filemcp.ContainsKey("envFile"), Is.False);
+            Assert.That(filemcp.ContainsKey("url"), Is.False);
         });
     }
 

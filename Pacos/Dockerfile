@@ -61,6 +61,23 @@ RUN mkdir -p /opt/gallerydl-mcp && \
     jq '.GalleryDlApi.AllowedPathPrefixes = []' /opt/gallerydl-mcp/appsettings.json > /opt/gallerydl-mcp/appsettings.json.tmp && \
     mv /opt/gallerydl-mcp/appsettings.json.tmp /opt/gallerydl-mcp/appsettings.json
 
+# Install the FileMcp MCP server (https://github.com/magicxor/FileMcp), pinned to a
+# released version. The framework-dependent build is arch-neutral IL; agy spawns it
+# as `dotnet /opt/file-mcp/FileMcp.dll` according to the mcp_config.json written at
+# startup by AgyMcpConfigHostedService. Unlike GalleryDl there is NO backend service
+# and NO container image to pull: FileMcp is entirely local (stdio only). Empty both
+# allow-list arrays in the shipped appsettings.json so the baked-in baseline allows
+# nothing (FileMcp treats an empty pattern list as deny-all) and the env overrides
+# written by AgyMcpConfigHostedService fully define the source/target allow-list.
+# Fail-closed: if the overrides ever go missing the server still starts but every
+# move is blocked.
+ENV FILE_MCP_VERSION=0.0.1
+RUN mkdir -p /opt/file-mcp && \
+    curl -fsSL "https://github.com/magicxor/FileMcp/releases/download/${FILE_MCP_VERSION}/FileMcp-${FILE_MCP_VERSION}.tar.gz" \
+      | tar -xz -C /opt/file-mcp && \
+    jq '.FileMove.AllowedSourcePatterns = [] | .FileMove.AllowedTargetPatterns = []' /opt/file-mcp/appsettings.json > /opt/file-mcp/appsettings.json.tmp && \
+    mv /opt/file-mcp/appsettings.json.tmp /opt/file-mcp/appsettings.json
+
 # Pin the agy CLI to the installed version; never let it self-update at runtime.
 ENV AGY_CLI_DISABLE_AUTO_UPDATE=true
 

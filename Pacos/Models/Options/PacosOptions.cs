@@ -89,6 +89,33 @@ public sealed class PacosOptions
                 ["GalleryDlApi__AllowedPathPrefixes__0"] = Const.WorkspaceRootPlaceholder,
             },
         },
+        ["filemcp"] = new McpServer
+        {
+            Command = "dotnet",
+            Args = ["/opt/file-mcp/FileMcp.dll"],
+            Env = new Dictionary<string, string?>
+            {
+                // The Dockerfile empties both allow-list arrays in the server's
+                // appsettings.json at image build time, so these single index-0
+                // overrides fully define the allow-list (arrays merge per index across
+                // configuration providers). Confine both the source and the target to
+                // the per-chat workspace subtree (which contains the per-turn output
+                // dir), mirroring gallerydl's workspace-root scoping. The resolved root
+                // is a plain /tmp path with no regex metacharacters, so it is safe to
+                // inline into these anchored FileMove patterns.
+                ["FileMove__AllowedSourcePatterns__0"] = $"^{Const.WorkspaceRootPlaceholder}(/.*)?$",
+                ["FileMove__AllowedTargetPatterns__0"] = $"^{Const.WorkspaceRootPlaceholder}(/.*)?$",
+                // Per-turn files are destroyed once the turn ends, so any file the agent
+                // can legitimately move was created during the current turn (bounded by
+                // PromptTimeoutSeconds, default 300s). Keep this a tight, turn-scoped
+                // bound: comfortably above PromptTimeoutSeconds so a long turn's fresh
+                // file is never falsely rejected, but far too short to let a future
+                // path-traversal bug reach a stale file. Do NOT widen it toward hours/days
+                // (there are no legitimately old files to move); if PromptTimeoutSeconds
+                // is ever raised above this, bump this in step, not the other way around.
+                ["FileMove__MaxFileAgeSeconds"] = "600",
+            },
+        },
     };
 #pragma warning restore S5332
 
