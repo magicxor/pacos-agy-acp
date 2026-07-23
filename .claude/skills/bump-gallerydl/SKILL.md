@@ -52,7 +52,5 @@ These mention GalleryDl but carry no version — leave them alone:
    - MCP server: a release `X.Y.Z` at `magicxor/GalleryDlManager` with asset
      `GalleryDl.McpServer-X.Y.Z.tar.gz`.
    - Backend: `docker manifest inspect ghcr.io/magicxor/gallerydl-webapi:X.Y.Z`
-2. `dotnet build Pacos.slnx` still succeeds (nothing C# changed, but keep the
-   repo green).
-3. Commit all three files together in a single commit, e.g.
+2. Commit all three files together in a single commit, e.g.
    `Bump GalleryDl to X.Y.Z`, so the bump can be pushed/reverted as one unit.
