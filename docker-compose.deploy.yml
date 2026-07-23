@@ -32,6 +32,7 @@ services:
       - agy-state:/home/agent/.gemini
     depends_on:
       - gallerydl-webapi
+      - crawl4ai
     networks:
       - pacos-net
 
@@ -48,6 +49,24 @@ services:
       # /etc/gallery-dl.conf is a system-wide config path gallery-dl reads regardless of
       # which user the container process runs as.
       - ./gallery-dl.conf:/etc/gallery-dl.conf:ro
+    networks:
+      - pacos-net
+
+  # Crawl4AI REST backend for a (future) custom MCP server that runs inside the
+  # pacos container (spawned by agy). Reachable only on the compose network as
+  # http://crawl4ai:11235 - no published ports. shm_size is required: crawl4ai
+  # drives headless Chromium and the default 64MB /dev/shm makes pages crash.
+  crawl4ai:
+    image: unclecode/crawl4ai:0.9.2
+    container_name: ${CONTAINER_NAME}-crawl4ai
+    restart: always
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11235/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - pacos-net
 
