@@ -1,6 +1,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Pacos.Constants;
@@ -70,9 +71,10 @@ public sealed class AgyMcpConfigHostedService : IHostedService
             Directory.CreateDirectory(directory);
 
             var workspaceRoot = AcpSessionPool.ResolveRoot(_options);
+            var brainDirectory = $"{home.Replace('\\', '/').TrimEnd('/')}/.gemini/antigravity-cli/brain";
             await File.WriteAllTextAsync(
                 configPath,
-                BuildConfigJson(_options.McpServers, workspaceRoot),
+                BuildConfigJson(_options.McpServers, workspaceRoot, brainDirectory),
                 cancellationToken);
 
             _logger.LogInformation(
@@ -91,21 +93,31 @@ public sealed class AgyMcpConfigHostedService : IHostedService
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>
-    /// Renders the mcp_config.json content, replacing <see cref="Const.WorkspaceRootPlaceholder"/>
-    /// in env values with <paramref name="workspaceRoot"/> (the source dictionary is never
-    /// mutated — it is the live options singleton). Kept separate (and public) so tests can pin
-    /// the exact JSON shape agy expects — stdio entries must come out as bare command/args/env.
+    /// Renders the mcp_config.json content, substituting the workspace-root and brain-dir
+    /// placeholders in env values: <see cref="Const.WorkspaceRootPlaceholder"/> raw (for literal
+    /// path prefixes) and <see cref="Const.WorkspaceRootPatternPlaceholder"/> /
+    /// <see cref="Const.BrainDirPlaceholder"/> regex-escaped (for FileMove regex patterns). The
+    /// source dictionary is never mutated — it is the live options singleton. Kept separate (and
+    /// public) so tests can pin the exact JSON shape agy expects — stdio entries must come out as
+    /// bare command/args/env.
     /// </summary>
-    public static string BuildConfigJson(Dictionary<string, McpServer> mcpServers, string workspaceRoot)
+    public static string BuildConfigJson(Dictionary<string, McpServer> mcpServers, string workspaceRoot, string brainDirectory)
     {
+        // Paths inlined into FileMove regex patterns must be regex-escaped: the brain path
+        // contains '.', and WorkingDirectoryRoot is user-configurable and may contain other
+        // metacharacters. The raw workspace root stays available for gallerydl, which consumes
+        // it as a literal path prefix (escaping would corrupt that).
+        var workspaceRootPattern = Regex.Escape(workspaceRoot);
+        var brainPattern = Regex.Escape(brainDirectory);
+
         var servers = mcpServers.ToDictionary(
             pair => pair.Key,
-            pair => SubstituteWorkspaceRoot(pair.Value, workspaceRoot));
+            pair => SubstitutePlaceholders(pair.Value, workspaceRoot, workspaceRootPattern, brainPattern));
 
         return JsonSerializer.Serialize(new McpRoot { McpServers = servers }, ConfigJsonOptions);
     }
 
-    private static McpServer SubstituteWorkspaceRoot(McpServer server, string workspaceRoot)
+    private static McpServer SubstitutePlaceholders(McpServer server, string workspaceRoot, string workspaceRootPattern, string brainPattern)
     {
         if (server.Env is not { Count: > 0 } env)
         {
@@ -118,9 +130,14 @@ public sealed class AgyMcpConfigHostedService : IHostedService
             Name = server.Name,
             Command = server.Command,
             Args = server.Args,
+            // Substitute {workspaceRootPattern} before {workspaceRoot} so the shorter raw
+            // placeholder can never clip the longer escaped one.
             Env = env.ToDictionary(
                 pair => pair.Key,
-                pair => pair.Value?.Replace(Const.WorkspaceRootPlaceholder, workspaceRoot, StringComparison.Ordinal)),
+                pair => pair.Value
+                    ?.Replace(Const.WorkspaceRootPatternPlaceholder, workspaceRootPattern, StringComparison.Ordinal)
+                    .Replace(Const.WorkspaceRootPlaceholder, workspaceRoot, StringComparison.Ordinal)
+                    .Replace(Const.BrainDirPlaceholder, brainPattern, StringComparison.Ordinal)),
             EnvFile = server.EnvFile,
             Url = server.Url,
             Headers = server.Headers,

@@ -1,6 +1,5 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Pacos.Models.Options;
@@ -17,7 +16,7 @@ namespace Pacos.Services.Acp;
 /// this settings.json (permissions, file access, agent mode, artifact review) and
 /// auto-denies any action that would require an interactive confirmation, so the
 /// <c>allow</c> list below is load-bearing — everything the agent legitimately
-/// needs (workspace/brain file I/O, the cp delivery command, web access) must be
+/// needs (workspace/brain file I/O, MCP tools, web access) must be
 /// explicitly allowed or the bot stops working.
 ///
 /// Matching semantics (verified empirically against agy 1.1.4 headless runs):
@@ -25,13 +24,12 @@ namespace Pacos.Services.Acp;
 /// cover the whole subtree; <c>command(...)</c>/<c>unsandboxed(...)</c> targets are
 /// matched LITERALLY unless the target starts with <c>regex:</c>. A regex target is
 /// whitespace-tokenized, each token is an anchored RE2 regular expression
-/// (<c>^(?:token)$</c>) matched against the corresponding command token, and rules
-/// match as a token-prefix of the command (a bare-regex rule such as
-/// <c>command(cp .*)</c> silently never matches — every regex-shaped rule below
-/// MUST carry the <c>regex:</c> prefix, in allow and deny alike). The deny rules
-/// are kept as defense-in-depth: they also override agy's built-in default command
-/// grants (e.g. <c>command(cat)</c>) and protect against a future fail-open
-/// regression. The real isolation boundary is still the container (read-only
+/// (<c>^(?:token)$</c>) matched against the corresponding command token. This service
+/// no longer emits any per-command regex rules: all shell commands are denied via the
+/// <c>command(*)</c> and <c>unsandboxed(*)</c> wildcards (file delivery goes through the
+/// filemcp MCP server, not the shell). That blanket deny also overrides agy's built-in
+/// default command grants (e.g. <c>command(cat)</c>) and protects against a future
+/// fail-open regression. The real isolation boundary is still the container (read-only
 /// rootfs, dropped capabilities, pids/memory/cpu limits, no-new-privileges,
 /// egress allow-list).
 ///
@@ -43,8 +41,8 @@ namespace Pacos.Services.Acp;
 /// NOTE: this policy is Linux-shaped and only fully works in the production
 /// container. On a Windows dev machine agy feeds the file rules into the
 /// run_command sandbox spec, which rejects the Linux deny paths (/app, /bin, …)
-/// as non-absolute, and the "must start with /" cp denies fire on drive-letter
-/// paths — so every terminal command fails locally even though file I/O works.
+/// as non-absolute — so the file I/O rules behave differently locally. Shell
+/// commands are denied outright on every platform.
 /// </summary>
 public sealed class AgySecurityPolicyHostedService : IHostedService
 {
@@ -68,7 +66,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
     {
         _logger = logger;
         _workspaceRoot = NormalizePath(AcpSessionPool.ResolveRoot(options.Value));
-        _commandRuleMode = (options.Value.AgyCommandRuleMode ?? "nolookahead").Trim().ToLowerInvariant();
+        _commandRuleMode = (options.Value.AgyCommandRuleMode ?? "denyall").Trim().ToLowerInvariant();
         _chatModel = options.Value.ChatModel;
         _mcpServerNames = options.Value.McpServers.Keys.ToArray();
     }
@@ -173,16 +171,14 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         AllowReadWrite(_workspaceRoot);
         AllowReadWrite($"{cli}/brain");
 
-        // Every sensitive path the agent must never read or write. The exact same
-        // list also drives the cp command deny rules below, so the file policy and
-        // the command policy can never drift apart (see CollectDeniedPaths).
+        // Every sensitive path the agent must never read or write.
         var deniedPaths = CollectDeniedPaths(home, gemini, cli);
         foreach (var path in deniedPaths)
         {
             DenyReadWrite(path);
         }
 
-        AppendCommandRules(allow, deny, deniedPaths, _workspaceRoot, $"{cli}/brain");
+        AppendCommandRules(deny);
 
         // Headless agy (>= 1.1.3) honors these settings and auto-denies anything
         // that would need an interactive confirmation, so every review pause must
@@ -212,10 +208,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
 
     /// <summary>
     /// The single source of truth for every absolute path the agent must never read
-    /// or write. Returned paths are literal (not regex-escaped); callers that build
-    /// regex rules (the cp command policy) escape them as needed. Keeping the list in
-    /// one place guarantees the read_file/write_file deny rules and the cp command
-    /// deny rules stay in sync.
+    /// or write; it drives the read_file/write_file deny rules.
     /// </summary>
     private static List<string> CollectDeniedPaths(string home, string gemini, string cli)
     {
@@ -297,119 +290,22 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
     }
 
     /// <summary>
-    /// Appends the <c>command(...)</c> rules for the configured mode. The goal is to
-    /// permit only a single file-delivery command of the exact shape
-    /// <c>cp &lt;safe-src&gt; &lt;safe-dst&gt;</c> and deny everything else.
+    /// Appends the command-permission rules for the configured mode. The agent has no
+    /// legitimate use for the shell — file delivery goes through the filemcp MCP server —
+    /// so the default denies every shell command outright.
     /// </summary>
-    private void AppendCommandRules(List<string> allow, List<string> deny, List<string> deniedPaths, string workspaceRoot, string brainDir)
+    private void AppendCommandRules(List<string> deny)
     {
-        switch (_commandRuleMode)
+        // "off" is a local-debugging escape hatch (agy default-allows commands). Every
+        // other value, including the "denyall" default and any unknown value, denies all
+        // shell commands. agy treats command(...) and unsandboxed(...) as separate verbs,
+        // so both wildcards are required for a complete ban.
+        if (_commandRuleMode == "off")
         {
-            case "off":
-                // No command restrictions at all (agy default-allows). For testing only.
-                return;
-
-            case "denyall":
-                deny.Add("command(*)");
-                break;
-
-            case "nolookahead":
-                AppendNoLookaheadCommandRules(allow, deny, deniedPaths, workspaceRoot, brainDir);
-                break;
-
-            default:
-                // Unknown value falls back to the safe default.
-                AppendNoLookaheadCommandRules(allow, deny, deniedPaths, workspaceRoot, brainDir);
-                break;
-        }
-    }
-
-    /// <summary>
-    /// RE2-safe strict whitelist with NO negative lookahead. Every rule body is
-    /// emitted with the <c>regex:</c> target prefix — since agy 1.0.13 command
-    /// targets are matched literally by default and a bare-regex rule silently
-    /// never matches (verified on 1.1.4). With the prefix, agy whitespace-tokenizes
-    /// the target, treats every token as an anchored RE2 regex (<c>^(?:token)$</c>)
-    /// and matches rules as a token-prefix of the command, so these patterns behave
-    /// the same whether the engine full-matches or prefix-matches. Validated
-    /// against a positive/negative test matrix under both interpretations.
-    ///
-    /// The permitted shape is exactly <c>cp &lt;abs-no-meta-no-dotdot&gt; &lt;abs-no-meta-no-dotdot&gt;</c>
-    /// (two arguments). Because allow rules prefix-match, the "three or more
-    /// arguments" deny rules below are what stops the 3-token allow rule from also
-    /// matching longer commands. The destination is not positively constrained to
-    /// the output directory (that needs lookahead); functionally this is fine
-    /// because only files that end up in the per-turn output directory are ever
-    /// delivered, and the container read-only rootfs blocks writes elsewhere.
-    /// Sensitive source roots are denied by name as a best-effort. agy 1.1.3+
-    /// headless mode already auto-denies any command that matches no allow rule,
-    /// so this deny wall is defense-in-depth (it also outranks agy's built-in
-    /// default command grants such as <c>command(cat)</c>), not the boundary.
-    /// </summary>
-    private static void AppendNoLookaheadCommandRules(List<string> allow, List<string> deny, List<string> deniedPaths, string workspaceRoot, string brainDir)
-    {
-        // agy treats command(...) and unsandboxed(...) as separate permission verbs,
-        // so every rule body has to be registered under both. These helpers emit the
-        // identical pattern for both verbs to avoid duplicating each line by hand.
-        // The regex: prefix is mandatory: without it the target is matched as a
-        // literal command prefix and every pattern here would be dead.
-        void AddAllow(string body)
-        {
-            allow.Add($"command(regex:{body})");
-            allow.Add($"unsandboxed(regex:{body})");
+            return;
         }
 
-        void AddDeny(string body)
-        {
-            deny.Add($"command(regex:{body})");
-            deny.Add($"unsandboxed(regex:{body})");
-        }
-
-        // The workspace root and the agy brain staging dir are resolved dynamically
-        // (HOME and WorkingDirectoryRoot can vary), so the cp allowlist tracks the
-        // same locations the file I/O policy grants. Escape them because command
-        // rules are regexes (a literal '.' must not act as "any char").
-        var workspace = Regex.Escape(workspaceRoot);
-        var brain = Regex.Escape(brainDir);
-
-        AddAllow($"cp {workspace}/[-A-Za-z0-9._/]* {brain}/[-A-Za-z0-9._/]*");
-        AddAllow($"cp {brain}/[-A-Za-z0-9._/]* {workspace}/[-A-Za-z0-9._/]*");
-
-        // --- Command is not the exact shape "cp <arg> <arg>" ---
-        AddDeny("[^c].*");  // does not start with 'c'
-        AddDeny("c$");      // just "c"
-        AddDeny("c[^p].*"); // 'c' not followed by 'p'
-        AddDeny("cp\\S+");  // "cp" followed by non-space
-
-        AddDeny("cp \\S+ \\S+ \\S+"); // three or more arguments (chaining)
-        AddDeny("cp \\S+ \\S+ \\S+ \\S+"); // three or more arguments (chaining)
-
-        // --- Content of the (already 2-arg) command is unsafe ---
-        AddDeny("cp .*[;&|\\$`()*?~\\\\'\"<>{}!#%].* \\S+"); // any shell metacharacter anywhere
-        AddDeny("cp \\S+ .*[;&|\\$`()*?~\\\\'\"<>{}!#%].*"); // any shell metacharacter anywhere
-
-        AddDeny("cp \\S+ .*\\.\\..*"); // path traversal ".." anywhere
-        AddDeny("cp .*\\.\\..* \\S+"); // path traversal ".." anywhere
-
-        AddDeny("cp [^/].* \\S+"); // source is not an absolute path
-        AddDeny("cp \\S+ [^/].*"); // destination is not an absolute path
-
-        // deny /./ segment:
-        AddDeny("cp \\S+ .*/\\.(/|$).*");
-        AddDeny("cp .*/\\.(/|$).* \\S+");
-
-        // --- Deny every sensitive path from BuildSettingsJson in BOTH cp args ---
-        // deniedPaths is the same list that drives the read_file/write_file denies,
-        // so anything blocked there is automatically blocked as a cp source AND as a
-        // cp destination. Paths are regex-escaped because command rules are regexes
-        // (a literal '.' must not act as "any char"). Each space-separated token is
-        // matched as an independent regex against the corresponding argument, so
-        // "{path}.* .*" pins the source and ".* {path}.*" pins the destination.
-        foreach (var path in deniedPaths)
-        {
-            var escaped = Regex.Escape(path);
-            AddDeny($"cp {escaped}.* .*");
-            AddDeny($"cp .* {escaped}.*");
-        }
+        deny.Add("command(*)");
+        deny.Add("unsandboxed(*)");
     }
 }

@@ -13,11 +13,11 @@ Pacos is a .NET-based Telegram bot designed to interact in group chats. It drive
 
 - **AI-Powered Chat**: Responds to mentions (e.g., "pacos", "пакос") or direct messages by driving the agy agent over ACP. Each chat gets its own working directory and persona steering file (`GEMINI.md`).
 - **Image Generation**: Generate or modify images via the `!drawx <prompt>` command. An optional source image can be supplied with the command or by replying to a message that contains one.
-- **File Delivery**: The agent can return generated files (images, documents, etc.) by copying them into a per-turn output directory, which the bot then forwards back to the user.
+- **File Delivery**: The agent can return generated files (images, documents, etc.) by moving them into a per-turn output directory via the filemcp MCP server, which the bot then forwards back to the user.
 - **Chat Management**:
     - **Reset History**: Users can clear the agent's session for a specific chat with the `!resetx` command.
 - **Language Identification**: Detects the language of incoming messages to tailor responses (using `NTextCat` with `Core14.profile.xml`).
-- **Sandboxed Execution**: An enforced agy permission policy (written at startup) restricts the agent's file and command access to its per-chat workspace. The real isolation boundary is the container (non-root user, restricted volume).
+- **Sandboxed Execution**: An enforced agy permission policy (written at startup) denies all shell commands and restricts the agent's file access to its per-chat workspace and the brain staging dir; file delivery is handled by the filemcp MCP server, not the shell. The real isolation boundary is the container (non-root user, restricted volume).
 - **Asynchronous Processing**: Handles incoming Telegram updates and agent interactions asynchronously using a background task queue to ensure responsiveness.
 
 ## Core Technologies
@@ -47,7 +47,7 @@ The bot reads its settings from environment variables or an `appsettings.json` f
 - `AgyExtraArgs`: Extra arguments forwarded to every underlying `agy` invocation (via `AGY_EXTRA_ARGS`).
 - `GeminiApiKey`: Optional Gemini API key passed to the agy subprocess for non-interactive auth. When empty, agy relies on its own persisted OAuth credentials (e.g. `~/.gemini`).
 - `PromptTimeoutSeconds`: Hard timeout for a single prompt round-trip to agy-acp (default: `300`).
-- `AgyCommandRuleMode`: Which set of agy `command(...)` permission rules to write (`nolookahead` (default), `denyall`, or `off`).
+- `AgyCommandRuleMode`: Which set of agy command-permission rules to write (`denyall` (default) or `off`).
 
 ## Setup and Running
 
