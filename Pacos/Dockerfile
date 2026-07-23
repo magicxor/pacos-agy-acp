@@ -54,7 +54,7 @@ COPY --from=adapter-builder /build/target/release/agy-acp /usr/local/bin/agy-acp
 # by AgyMcpConfigHostedService fully defines the allow-list. Fail-closed: the
 # server validates AllowedPathPrefixes with MinLength(1) on startup, so if the
 # override ever goes missing the server refuses to start instead of widening.
-ENV GALLERYDL_MCP_VERSION=0.2.3
+ENV GALLERYDL_MCP_VERSION=0.3.0
 RUN mkdir -p /opt/gallerydl-mcp && \
     curl -fsSL "https://github.com/magicxor/GalleryDlManager/releases/download/${GALLERYDL_MCP_VERSION}/GalleryDl.McpServer-${GALLERYDL_MCP_VERSION}.tar.gz" \
       | tar -xz -C /opt/gallerydl-mcp && \

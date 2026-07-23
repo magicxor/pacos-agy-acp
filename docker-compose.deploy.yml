@@ -39,7 +39,7 @@ services:
   # the pacos container (spawned by agy). Reachable only on the compose network
   # as http://gallerydl-webapi:8080 - no published ports.
   gallerydl-webapi:
-    image: ghcr.io/magicxor/gallerydl-webapi:0.2.3
+    image: ghcr.io/magicxor/gallerydl-webapi:0.3.0
     container_name: ${CONTAINER_NAME}-gallerydl-webapi
     restart: always
     volumes:
