@@ -46,6 +46,8 @@
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="Polly" Version="8.7.0" />
     <PackageVersion Include="Polly.Contrib.WaitAndRetry" Version="1.1.1" />
+    <PackageVersion Include="SkiaSharp" Version="4.150.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.150.1" />
     <PackageVersion Include="Telegram.Bot" Version="22.10.2" />
     <PackageVersion Include="Verify" Version="31.25.0" />
     <PackageVersion Include="Verify.NUnit" Version="31.25.0" />

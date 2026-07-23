@@ -1,5 +1,6 @@
 using Pacos.Constants;
 using Pacos.Models;
+using Pacos.Services.ImageConversion;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 
@@ -21,10 +22,12 @@ public sealed class OutputFileSender
     private static readonly string[] VideoExtensions = [".mp4"];
 
     private readonly ILogger<OutputFileSender> _logger;
+    private readonly ImageDownscaler _imageDownscaler;
 
-    public OutputFileSender(ILogger<OutputFileSender> logger)
+    public OutputFileSender(ILogger<OutputFileSender> logger, ImageDownscaler imageDownscaler)
     {
         _logger = logger;
+        _imageDownscaler = imageDownscaler;
     }
 
     /// <summary>
@@ -41,6 +44,8 @@ public sealed class OutputFileSender
         CancellationToken cancellationToken)
     {
         var (media, documents, droppedMedia, droppedDocuments) = BuildPlan(files);
+
+        media = [.. media.Select(DownscaleIfOversized)];
 
         LogDroppedFiles("images/videos", media.Select(static m => m.File.FileName), droppedMedia);
         LogDroppedFiles("documents", documents.Select(static f => f.FileName), droppedDocuments);
@@ -232,6 +237,12 @@ public sealed class OutputFileSender
             }
         }
     }
+
+    private PlannedMedia DownscaleIfOversized(PlannedMedia item) =>
+        item.Kind == OutputMediaKind.Photo
+        && item.File.Content.Length > Const.MaxTelegramPhotoSizeBytes
+            ? item with { File = _imageDownscaler.FitWithinBounds(item.File) }
+            : item;
 
     private async Task<int> SendMediaAsync(
         ITelegramBotClient botClient,

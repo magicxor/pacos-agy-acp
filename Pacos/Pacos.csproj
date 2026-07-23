@@ -24,6 +24,8 @@
         <PackageReference Include="NTextCat" />
         <PackageReference Include="Polly" />
         <PackageReference Include="Polly.Contrib.WaitAndRetry" />
+        <PackageReference Include="SkiaSharp" />
+        <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
         <PackageReference Include="Telegram.Bot" />
     </ItemGroup>
 
