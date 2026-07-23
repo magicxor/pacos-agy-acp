@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Pacos.Constants;
 
 namespace Pacos.Models.Options;
 
@@ -62,18 +63,76 @@ public sealed class PacosOptions
     public int PromptTimeoutSeconds { get; set; } = 300;
 
     /// <summary>
-    /// Which set of agy <c>command(...)</c> permission rules to write into
-    /// settings.json. Lets you A/B different hardening strategies at runtime
-    /// without rebuilding. Accepted values (case-insensitive):
+    /// MCP servers agy should load, keyed by server name. Written to
+    /// <c>~/.gemini/config/mcp_config.json</c> on startup by
+    /// <see cref="Services.Acp.AgyMcpConfigHostedService"/>; the security policy
+    /// allows MCP tool calls only for the server names listed here (everything
+    /// else is auto-denied by headless agy). Env values may contain
+    /// <see cref="Const.WorkspaceRootPlaceholder"/>, which is replaced at startup
+    /// with the resolved workspace root (<see cref="Services.Acp.AcpSessionPool.ResolveRoot"/>),
+    /// so file-saving allow-lists always track <see cref="WorkingDirectoryRoot"/>.
+    /// </summary>
+#pragma warning disable S5332 // plain http is intentional: container-to-container traffic on the internal compose network
+    public Dictionary<string, McpServer> McpServers { get; set; } = new()
+    {
+        ["gallerydl"] = new McpServer
+        {
+            Command = "dotnet",
+            Args = ["/opt/gallerydl-mcp/GalleryDl.McpServer.dll"],
+            Env = new Dictionary<string, string?>
+            {
+                ["GalleryDlApi__BaseUrl"] = "http://gallerydl-webapi:8080",
+                ["GalleryDlApi__MaxTake"] = "10",
+                // The Dockerfile empties AllowedPathPrefixes in the server's appsettings.json
+                // at image build time, so this single index fully defines the allow-list
+                // (arrays merge per index across configuration providers).
+                ["GalleryDlApi__AllowedPathPrefixes__0"] = Const.WorkspaceRootPlaceholder,
+            },
+        },
+        ["filemcp"] = new McpServer
+        {
+            Command = "dotnet",
+            Args = ["/opt/file-mcp/FileMcp.dll"],
+            Env = new Dictionary<string, string?>
+            {
+                // The Dockerfile empties both allow-list arrays in the server's
+                // appsettings.json at image build time, so these single index-0
+                // overrides fully define the allow-list (arrays merge per index across
+                // configuration providers). The ONLY movement the agent may perform is
+                // delivering a generated file from the agy brain staging dir into the
+                // per-turn output dir, so the source is pinned to the brain dir and the
+                // target to the per-turn output dir (<root>/<chatId>/.turns/<turnId>/output).
+                // Both {brainDir} and {workspaceRootPattern} are regex-escaped during
+                // substitution: WorkingDirectoryRoot is user-configurable and may contain regex
+                // metacharacters, so it must not be inlined raw into these patterns. The plain
+                // {workspaceRoot} placeholder is deliberately NOT used here — it stays raw for
+                // gallerydl's literal path prefix (see AgyMcpConfigHostedService).
+                ["FileMove__AllowedSourcePatterns__0"] = $"^{Const.BrainDirPlaceholder}(/.*)?$",
+                ["FileMove__AllowedTargetPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/output(/.*)?$",
+                // Per-turn files are destroyed once the turn ends, so any file the agent
+                // can legitimately move was created during the current turn (bounded by
+                // PromptTimeoutSeconds, default 300s). Keep this a tight, turn-scoped
+                // bound: comfortably above PromptTimeoutSeconds so a long turn's fresh
+                // file is never falsely rejected, but far too short to let a future
+                // path-traversal bug reach a stale file. Do NOT widen it toward hours/days
+                // (there are no legitimately old files to move); if PromptTimeoutSeconds
+                // is ever raised above this, bump this in step, not the other way around.
+                ["FileMove__MaxFileAgeSeconds"] = "600",
+            },
+        },
+    };
+#pragma warning restore S5332
+
+    /// <summary>
+    /// Which set of agy command-permission rules to write into settings.json.
+    /// Accepted values (case-insensitive):
     /// <list type="bullet">
-    /// <item><c>nolookahead</c> (default) — RE2-safe whitelist expressed as a set of
-    /// fully-anchored deny patterns (no negative lookahead). Robust to agy's actual
-    /// regex engine and matching semantics.</item>
-    /// <item><c>lookahead</c> — compact whitelist using negative lookahead; only works
-    /// if agy's engine is PCRE-style. Fails (blocks everything) on an RE2 engine.</item>
-    /// <item><c>denyall</c> — block every shell command (<c>command(*)</c>).</item>
-    /// <item><c>off</c> — no command rules at all (agy default-allows commands).</item>
+    /// <item><c>denyall</c> (default) — block every shell command by denying both the
+    /// <c>command(*)</c> and <c>unsandboxed(*)</c> verbs. The agent has no legitimate
+    /// use for the shell: file delivery goes through the filemcp MCP server.</item>
+    /// <item><c>off</c> — no command rules at all (agy default-allows commands). For
+    /// local debugging only.</item>
     /// </list>
     /// </summary>
-    public string AgyCommandRuleMode { get; set; } = "nolookahead";
+    public string AgyCommandRuleMode { get; set; } = "denyall";
 }

@@ -26,6 +26,23 @@ jobs:
     runs-on: ubuntu-26.04
     environment: ${{ inputs.environment }}
     steps:
+      - uses: actions/checkout@v7
+
+      # The compose file is rendered on the runner and shipped to the server, so
+      # the server never needs a checkout of this repository.
+      - name: Copy compose file to server
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT }}
+          source: docker-compose.deploy.yml
+          # Relative path = under the SSH user's home directory. Keeps the deploy
+          # root-free: a fresh server needs no pre-created /opt/... directories,
+          # drone-scp creates ~/pacos/<env> itself with the user's own permissions.
+          target: pacos/${{ inputs.environment }}/
+
       - name: executing remote ssh commands
         uses: appleboy/ssh-action@v1.2.5
         with:
@@ -34,31 +51,55 @@ jobs:
           password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            docker pull ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }}
-            docker volume create pacos_agy_acp_${{ inputs.environment }}
+            set -e
+            export PACOS_IMAGE='${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }}'
+            export CONTAINER_NAME='${{ inputs.container_name }}'
+            export AGY_VOLUME_NAME='pacos_agy_acp_${{ inputs.environment }}'
+            export PACOS__TELEGRAMBOTAPIKEY='${{ secrets.PACOS__TELEGRAMBOTAPIKEY }}'
+            export PACOS__ALLOWEDCHATIDS__0='${{ vars.PACOS__ALLOWEDCHATIDS__0 }}'
+            export PACOS__ALLOWEDCHATIDS__1='${{ vars.PACOS__ALLOWEDCHATIDS__1 }}'
+            export PACOS__ALLOWEDCHATIDS__2='${{ vars.PACOS__ALLOWEDCHATIDS__2 }}'
+            export PACOS__ALLOWEDCHATIDS__3='${{ vars.PACOS__ALLOWEDCHATIDS__3 }}'
+            export PACOS__ALLOWEDCHATIDS__4='${{ vars.PACOS__ALLOWEDCHATIDS__4 }}'
+            export PACOS__ALLOWEDCHATIDS__5='${{ vars.PACOS__ALLOWEDCHATIDS__5 }}'
+            export PACOS__ALLOWEDCHATIDS__6='${{ vars.PACOS__ALLOWEDCHATIDS__6 }}'
+            export PACOS__ALLOWEDCHATIDS__7='${{ vars.PACOS__ALLOWEDCHATIDS__7 }}'
+            export PACOS__ALLOWEDCHATIDS__8='${{ vars.PACOS__ALLOWEDCHATIDS__8 }}'
+            export PACOS__ALLOWEDCHATIDS__9='${{ vars.PACOS__ALLOWEDCHATIDS__9 }}'
+            export PACOS__CHATMODEL='${{ vars.PACOS__CHATMODEL }}'
+
+            docker pull "$PACOS_IMAGE"
+            docker volume create "$AGY_VOLUME_NAME"
             # Ensure the named volume is owned by the non-root `agent` user. A volume
             # created by an earlier deploy (or on a path missing from the image) is
-            # owned by root:root, which makes agy fail with "permission denied" when
-            # writing its state. Running chown from the same image resolves `agent`
-            # to the correct uid/gid. Idempotent: safe to run on every deploy.
+            # owned by root:root, which makes agy fail with UnauthorizedAccessException
+            # when writing its state. Running chown from the same image resolves
+            # `agent` to the correct uid/gid. Idempotent: safe to run on every deploy.
             docker run --rm --user root --entrypoint chown \
-              -v pacos_agy_acp_${{ inputs.environment }}:/home/agent/.gemini \
-              ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }} \
+              -v "$AGY_VOLUME_NAME":/home/agent/.gemini \
+              "$PACOS_IMAGE" \
               -R agent:agent /home/agent/.gemini
-            docker stop ${{ inputs.container_name }} || true
-            docker rm ${{ inputs.container_name }} || true
-            docker run -i -t -d --restart=always --name=${{ inputs.container_name }} \
-              -v pacos_agy_acp_${{ inputs.environment }}:/home/agent/.gemini \
-              -e Pacos__TelegramBotApiKey='${{ secrets.PACOS__TELEGRAMBOTAPIKEY }}' \
-              -e Pacos__AllowedChatIds__0='${{ vars.PACOS__ALLOWEDCHATIDS__0 }}' \
-              -e Pacos__AllowedChatIds__1='${{ vars.PACOS__ALLOWEDCHATIDS__1 }}' \
-              -e Pacos__AllowedChatIds__2='${{ vars.PACOS__ALLOWEDCHATIDS__2 }}' \
-              -e Pacos__AllowedChatIds__3='${{ vars.PACOS__ALLOWEDCHATIDS__3 }}' \
-              -e Pacos__AllowedChatIds__4='${{ vars.PACOS__ALLOWEDCHATIDS__4 }}' \
-              -e Pacos__AllowedChatIds__5='${{ vars.PACOS__ALLOWEDCHATIDS__5 }}' \
-              -e Pacos__AllowedChatIds__6='${{ vars.PACOS__ALLOWEDCHATIDS__6 }}' \
-              -e Pacos__AllowedChatIds__7='${{ vars.PACOS__ALLOWEDCHATIDS__7 }}' \
-              -e Pacos__AllowedChatIds__8='${{ vars.PACOS__ALLOWEDCHATIDS__8 }}' \
-              -e Pacos__AllowedChatIds__9='${{ vars.PACOS__ALLOWEDCHATIDS__9 }}' \
-              -e Pacos__ChatModel='${{ vars.PACOS__CHATMODEL }}' \
-              ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKER_IMAGE }}:${{ inputs.tag }}
+
+            # One-time migration from the pre-compose deployment: remove the
+            # standalone container so compose can claim its container_name.
+            if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME" \
+               && ! docker inspect "$CONTAINER_NAME" --format '{{index .Config.Labels "com.docker.compose.project"}}' | grep -q .; then
+              docker stop "$CONTAINER_NAME" || true
+              docker rm "$CONTAINER_NAME" || true
+            fi
+
+            cd "$HOME/pacos/${{ inputs.environment }}"
+
+            # gallery-dl credentials for the gallerydl-webapi container, decoded from the
+            # GALLERYDL_CONFIG secret into a file that docker-compose.deploy.yml bind-mounts
+            # at /etc/gallery-dl.conf. The quoted heredoc delimiter ('GALLERYDL_EOF') means the
+            # remote shell takes the JSON verbatim - no expansion of $, backticks or \ inside
+            # the config or the API keys. The file is always created (never a directory), and
+            # the fallback guards against an empty/unset secret leaving an invalid config.
+            cat > gallery-dl.conf <<'GALLERYDL_EOF'
+            ${{ secrets.GALLERYDL_CONFIG }}
+            GALLERYDL_EOF
+            [ -s gallery-dl.conf ] || echo '{}' > gallery-dl.conf
+
+            docker compose -f docker-compose.deploy.yml -p '${{ inputs.container_name }}' pull
+            docker compose -f docker-compose.deploy.yml -p '${{ inputs.container_name }}' up -d --remove-orphans

@@ -26,7 +26,7 @@ RUN dotnet publish "./Pacos.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:U
 # --- Runtime image: .NET runtime + agy CLI + agy-acp adapter ---
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tini procps ffmpeg \
+    && apt-get install -y --no-install-recommends ca-certificates curl jq tini procps ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install agy (Google Antigravity CLI) — pinned to a known-good version
@@ -45,6 +45,39 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # The bot spawns `agy-acp`, which in turn spawns `agy`; both must be on PATH.
 COPY --from=adapter-builder /build/target/release/agy-acp /usr/local/bin/agy-acp
 
+# Install the GalleryDl MCP server (https://github.com/magicxor/GalleryDlManager),
+# pinned to a released version. The framework-dependent build is arch-neutral IL;
+# agy spawns it as `dotnet /opt/gallerydl-mcp/GalleryDl.McpServer.dll` according
+# to the mcp_config.json written at startup by AgyMcpConfigHostedService.
+# The shipped appsettings.json allows writing under /downloads and /tmp; empty the
+# list so the baked-in baseline allows nothing and the single env override written
+# by AgyMcpConfigHostedService fully defines the allow-list. Fail-closed: the
+# server validates AllowedPathPrefixes with MinLength(1) on startup, so if the
+# override ever goes missing the server refuses to start instead of widening.
+ENV GALLERYDL_MCP_VERSION=0.3.0
+RUN mkdir -p /opt/gallerydl-mcp && \
+    curl -fsSL "https://github.com/magicxor/GalleryDlManager/releases/download/${GALLERYDL_MCP_VERSION}/GalleryDl.McpServer-${GALLERYDL_MCP_VERSION}.tar.gz" \
+      | tar -xz -C /opt/gallerydl-mcp && \
+    jq '.GalleryDlApi.AllowedPathPrefixes = []' /opt/gallerydl-mcp/appsettings.json > /opt/gallerydl-mcp/appsettings.json.tmp && \
+    mv /opt/gallerydl-mcp/appsettings.json.tmp /opt/gallerydl-mcp/appsettings.json
+
+# Install the FileMcp MCP server (https://github.com/magicxor/FileMcp), pinned to a
+# released version. The framework-dependent build is arch-neutral IL; agy spawns it
+# as `dotnet /opt/file-mcp/FileMcp.dll` according to the mcp_config.json written at
+# startup by AgyMcpConfigHostedService. Unlike GalleryDl there is NO backend service
+# and NO container image to pull: FileMcp is entirely local (stdio only). Empty both
+# allow-list arrays in the shipped appsettings.json so the baked-in baseline allows
+# nothing (FileMcp treats an empty pattern list as deny-all) and the env overrides
+# written by AgyMcpConfigHostedService fully define the source/target allow-list.
+# Fail-closed: if the overrides ever go missing the server still starts but every
+# move is blocked.
+ENV FILE_MCP_VERSION=0.0.1
+RUN mkdir -p /opt/file-mcp && \
+    curl -fsSL "https://github.com/magicxor/FileMcp/releases/download/${FILE_MCP_VERSION}/FileMcp-${FILE_MCP_VERSION}.tar.gz" \
+      | tar -xz -C /opt/file-mcp && \
+    jq '.FileMove.AllowedSourcePatterns = [] | .FileMove.AllowedTargetPatterns = []' /opt/file-mcp/appsettings.json > /opt/file-mcp/appsettings.json.tmp && \
+    mv /opt/file-mcp/appsettings.json.tmp /opt/file-mcp/appsettings.json
+
 # Pin the agy CLI to the installed version; never let it self-update at runtime.
 ENV AGY_CLI_DISABLE_AUTO_UPDATE=true
 
@@ -61,11 +94,11 @@ RUN mkdir -p /home/agent/.gemini && chown -R agent:agent /home/agent/.gemini
 WORKDIR /app
 COPY --from=publish --chown=agent:agent /app/publish .
 
-# The agy security policy (allow only the cp file-delivery command, restrict
-# file access to the per-chat workspace and brain dir) is enforced in code at
-# startup — see AgySecurityPolicyHostedService — so it can never be forgotten
-# or shadowed. Headless agy >= 1.1.3 is fail-closed: everything outside the
-# allow list is auto-denied.
+# The agy security policy (deny ALL shell commands, restrict file access to the
+# per-chat workspace and brain dir) is enforced in code at startup — see
+# AgySecurityPolicyHostedService — so it can never be forgotten or shadowed.
+# File delivery goes through the filemcp MCP server, not the shell. Headless agy
+# >= 1.1.3 is fail-closed: everything outside the allow list is auto-denied.
 
 USER agent
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

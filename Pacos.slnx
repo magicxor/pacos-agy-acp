@@ -7,6 +7,7 @@
     <File Path="Directory.Build.props" />
     <File Path=".runsettings" />
   </Folder>
+  <Project Path="docker-compose.dcproj" />
   <Project Path="Pacos.Tests.Unit/Pacos.Tests.Unit.csproj" />
   <Project Path="Pacos/Pacos.csproj" />
 </Solution>

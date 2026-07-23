@@ -148,6 +148,8 @@ public sealed class ChatService : IAsyncDisposable
                + Environment.NewLine + Environment.NewLine
                + Const.FileDeliveryRuleSystemPrompt
                + Environment.NewLine + Environment.NewLine
+               + Const.GalleryDownloadRuleSystemPrompt
+               + Environment.NewLine + Environment.NewLine
                + $"Дата начала текущей сессии: {sessionStart}";
     }
 

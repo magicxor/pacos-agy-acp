@@ -11,6 +11,7 @@ using Pacos.Services.Acp;
 using Pacos.Services.BackgroundTasks;
 using Pacos.Services.ChatCommandHandlers;
 using Pacos.Services.GenerativeAi;
+using Pacos.Services.ImageConversion;
 using Pacos.Services.Markdown;
 using Pacos.Services.VideoConversion;
 using Telegram.Bot;
@@ -54,6 +55,10 @@ public sealed class Program
                     // policy is enforced) before any other hosted service.
                     services.AddHostedService<AgySecurityPolicyHostedService>();
 
+                    // Publishes PacosOptions.McpServers to agy (mcp_config.json); the
+                    // security policy above only allows MCP tools for these servers.
+                    services.AddHostedService<AgyMcpConfigHostedService>();
+
                     var telegramRequestTimeout = TimeSpan.FromSeconds(40);
                     services.AddHttpClient(nameof(HttpClientType.Telegram), httpClient => httpClient.Timeout = Timeout.InfiniteTimeSpan)
                         .AddDefaultLogger()
@@ -65,6 +70,7 @@ public sealed class Program
                         });
 
                     services.AddSingleton<VideoConverter>();
+                    services.AddSingleton<ImageDownscaler>();
                     services.AddSingleton<TimeProvider>(_ => TimeProvider.System);
                     services.AddSingleton<ITelegramBotClient>(s => new TelegramBotClient(
                             s.GetRequiredService<IOptions<PacosOptions>>().Value.TelegramBotApiKey,
@@ -77,6 +83,7 @@ public sealed class Program
                     services.AddSingleton<AcpSessionPool>();
                     services.AddSingleton<ChatService>();
                     services.AddSingleton<TelegramMediaService>();
+                    services.AddSingleton<OutputFileSender>();
                     services.AddSingleton<DrawHandler>();
                     services.AddSingleton<ResetHandler>();
                     services.AddSingleton<MentionHandler>();
