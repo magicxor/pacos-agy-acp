@@ -92,6 +92,60 @@ internal sealed class ImageDownscalerTests
         Assert.That(result, Is.SameAs(file));
     }
 
+    [TestCase(2000, 100, 20, false)]
+    [TestCase(2001, 100, 20, true)]
+    [TestCase(100, 2000, 20, false)]
+    [TestCase(100, 2001, 20, true)]
+    [TestCase(2000, 2000, 20, false)]
+    [TestCase(0, 100, 20, false)]
+    [TestCase(100, 0, 20, false)]
+    [TestCase(-5, 100, 20, false)]
+    [TestCase(int.MaxValue, 1, 20, true)]
+    public void ExceedsAspectRatioLimit_ShouldDetectOverlyElongatedImages(
+        int width,
+        int height,
+        int maxAspectRatio,
+        bool expected)
+    {
+        Assert.That(ImageDownscaler.ExceedsAspectRatioLimit(width, height, maxAspectRatio), Is.EqualTo(expected));
+    }
+
+    [TestCase(5000, 5000, 10000, false)]
+    [TestCase(5000, 5001, 10000, true)]
+    [TestCase(9999, 1, 10000, false)]
+    [TestCase(10000, 1, 10000, true)]
+    [TestCase(0, 0, 10000, false)]
+    [TestCase(int.MaxValue, int.MaxValue, 10000, true)]
+    public void ExceedsSemiperimeter_ShouldDetectImagesAboveTheLimit(
+        int width,
+        int height,
+        int maxSemiperimeter,
+        bool expected)
+    {
+        Assert.That(ImageDownscaler.ExceedsSemiperimeter(width, height, maxSemiperimeter), Is.EqualTo(expected));
+    }
+
+    [TestCase(SKEncodedImageFormat.Png)]
+    [TestCase(SKEncodedImageFormat.Webp)]
+    public void TryGetDimensions_WhenBytesAreAValidImage_ShouldReturnItsDimensions(SKEncodedImageFormat format)
+    {
+        var file = new OutputFile("pic", CreateImage(640, 480, format));
+
+        var dimensions = CreateDownscaler().TryGetDimensions(file);
+
+        Assert.That(dimensions, Is.EqualTo((640, 480)));
+    }
+
+    [Test]
+    public void TryGetDimensions_WhenBytesAreNotAnImage_ShouldReturnNull()
+    {
+        var file = new OutputFile("broken.png", [1, 2, 3, 4]);
+
+        var dimensions = CreateDownscaler().TryGetDimensions(file);
+
+        Assert.That(dimensions, Is.Null);
+    }
+
     private static ImageDownscaler CreateDownscaler() => new(NullLogger<ImageDownscaler>.Instance);
 
     private static byte[] CreateImage(int width, int height, SKEncodedImageFormat format)

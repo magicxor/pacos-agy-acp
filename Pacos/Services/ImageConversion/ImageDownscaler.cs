@@ -86,6 +86,35 @@ public sealed class ImageDownscaler
     }
 
     /// <summary>
+    /// Reads the pixel dimensions from <paramref name="file"/>'s image header without
+    /// decoding the full bitmap, or <see langword="null"/> when the bytes cannot be
+    /// read as an image. Best-effort: never throws into the send path.
+    /// </summary>
+    public (int Width, int Height)? TryGetDimensions(OutputFile file)
+    {
+        try
+        {
+            using var stream = new MemoryStream(file.Content, writable: false);
+            using var codec = SKCodec.Create(stream, out var result);
+            if (result != SKCodecResult.Success)
+            {
+                _logger.LogWarning(
+                    "Could not read the dimensions of {FileName} ({Result}); treating it as an ordinary image",
+                    file.FileName,
+                    result);
+                return null;
+            }
+
+            return (codec.Info.Width, codec.Info.Height);
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e, "Failed to read the dimensions of {FileName}; treating it as an ordinary image", file.FileName);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Computes the target dimensions that fit a <paramref name="width"/>×<paramref name="height"/>
     /// image inside a <paramref name="maxDimension"/> square while preserving the
     /// aspect ratio and never upscaling. Pure and side-effect free so it can be
@@ -105,4 +134,24 @@ public sealed class ImageDownscaler
 
         return (targetWidth, targetHeight);
     }
+
+    /// <summary>
+    /// Returns whether the image is more elongated than Telegram allows for a photo
+    /// (its longer side exceeds <paramref name="maxAspectRatio"/>× its shorter side),
+    /// in which case it must be sent as a document instead. Pure and side-effect free.
+    /// </summary>
+    internal static bool ExceedsAspectRatioLimit(int width, int height, int maxAspectRatio) =>
+        width > 0
+        && height > 0
+        && Math.Max(width, height) > (long)Math.Min(width, height) * maxAspectRatio;
+
+    /// <summary>
+    /// Returns whether the image's width + height exceeds Telegram's photo
+    /// semiperimeter limit, in which case the photo must be downscaled. Pure and
+    /// side-effect free.
+    /// </summary>
+    internal static bool ExceedsSemiperimeter(int width, int height, int maxSemiperimeter) =>
+        width > 0
+        && height > 0
+        && (long)width + height > maxSemiperimeter;
 }

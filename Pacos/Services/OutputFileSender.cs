@@ -9,10 +9,14 @@ namespace Pacos.Services;
 /// <summary>
 /// Delivers the files an agent produced in its output directory to Telegram.
 /// Images (JPG/JPEG/PNG/GIF/WebP) and MP4 videos are grouped into a single
-/// media album; every other file is grouped into a single document group. Each
-/// group is capped at <see cref="Const.MaxTelegramMediaGroupSize"/> items
-/// (dropping the alphabetically-last overflow), and any image/video whose name
-/// contains "nsfw" is covered with a spoiler. Videos and documents larger than
+/// media album; every other file is grouped into a single document group. An
+/// image whose aspect ratio is too extreme for Telegram to accept as a photo
+/// (longer side more than <see cref="Const.MaxTelegramPhotoMaxAspectRatio"/>× the
+/// shorter one) is sent as a document instead and consequently loses any NSFW
+/// spoiler, which Telegram does not support for documents. Each group is capped
+/// at <see cref="Const.MaxTelegramMediaGroupSize"/> items (dropping the
+/// alphabetically-last overflow), and any image/video whose name contains "nsfw"
+/// is covered with a spoiler. Videos and documents larger than
 /// <see cref="Const.MaxTelegramFileSizeBytes"/> are dropped with a warning,
 /// since (unlike photos) they cannot be downscaled to fit Telegram's limit.
 /// </summary>
@@ -45,9 +49,18 @@ public sealed class OutputFileSender
         string? caption,
         CancellationToken cancellationToken)
     {
-        var (media, documents, droppedMedia, droppedDocuments, oversized) = BuildPlan(files);
+        var imageDimensions = MeasureImages(files);
 
-        media = [.. media.Select(DownscaleIfOversized)];
+        // An image whose aspect ratio Telegram rejects for a photo (longer side more
+        // than MaxTelegramPhotoMaxAspectRatio× the shorter one) is routed into the
+        // document group instead. Such an image therefore loses any NSFW spoiler,
+        // which Telegram does not support for documents.
+        var (media, documents, droppedMedia, droppedDocuments, oversized) = BuildPlan(
+            files,
+            file => imageDimensions.TryGetValue(file, out var dimensions)
+                && ImageDownscaler.ExceedsAspectRatioLimit(dimensions.Width, dimensions.Height, Const.MaxTelegramPhotoMaxAspectRatio));
+
+        media = [.. media.Select(item => DownscaleIfOversized(item, imageDimensions))];
 
         LogOversizedFiles(oversized);
         LogDroppedFiles("images/videos", media.Select(static m => m.File.FileName), droppedMedia);
@@ -75,15 +88,19 @@ public sealed class OutputFileSender
                      IReadOnlyList<OutputFile> DroppedMedia,
                      IReadOnlyList<OutputFile> DroppedDocuments,
                      IReadOnlyList<OutputFile> DroppedOversized)
-        BuildPlan(IReadOnlyCollection<OutputFile> files)
+        BuildPlan(IReadOnlyCollection<OutputFile> files, Func<OutputFile, bool>? shouldSendImageAsDocument = null)
     {
+        // The IsImage guard keeps the reclassification confined to images, so a video
+        // is never rerouted into the document group regardless of what the predicate returns.
+        Func<OutputFile, bool> forceDocument = shouldSendImageAsDocument ?? (static _ => false);
+
         var mediaFiles = files
-            .Where(static f => IsMedia(f.FileName))
+            .Where(f => IsMedia(f.FileName) && !(IsImage(f.FileName) && forceDocument(f)))
             .OrderBy(static f => f.FileName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         var documentFiles = files
-            .Where(static f => !IsMedia(f.FileName))
+            .Where(f => !IsMedia(f.FileName) || (IsImage(f.FileName) && forceDocument(f)))
             .OrderBy(static f => f.FileName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -125,6 +142,17 @@ public sealed class OutputFileSender
     private static bool HasNsfwMarker(string fileName) => fileName.Contains(NsfwMarker, StringComparison.OrdinalIgnoreCase);
 
     private static bool ExceedsUploadLimit(OutputFile file) => file.Content.Length > Const.MaxTelegramFileSizeBytes;
+
+    // A photo must be downscaled when it is too large in bytes, or when its
+    // width + height exceeds Telegram's photo semiperimeter limit (which can happen
+    // well under the byte limit). FitWithinBounds fits it inside 2560x2560, which
+    // also flattens an animated GIF/WebP to a static JPEG.
+    private static bool NeedsDownscaling(
+        OutputFile file,
+        IReadOnlyDictionary<OutputFile, (int Width, int Height)> imageDimensions) =>
+        file.Content.Length > Const.MaxTelegramPhotoSizeBytes
+        || (imageDimensions.TryGetValue(file, out var dimensions)
+            && ImageDownscaler.ExceedsSemiperimeter(dimensions.Width, dimensions.Height, Const.MaxTelegramPhotoSemiperimeter));
 
     private static IAlbumInputMedia CreateAlbumMedia(PlannedMedia item, InputFile inputFile, string? caption)
     {
@@ -259,9 +287,31 @@ public sealed class OutputFileSender
         }
     }
 
-    private PlannedMedia DownscaleIfOversized(PlannedMedia item) =>
-        item.Kind == OutputMediaKind.Photo
-        && item.File.Content.Length > Const.MaxTelegramPhotoSizeBytes
+    // Keyed by the OutputFile instance rather than its file name: CollectOutputFiles
+    // flattens subdirectories to base names, so images from different folders can
+    // share a name; keying by name would let one image's dimensions mask another's.
+    private Dictionary<OutputFile, (int Width, int Height)> MeasureImages(IReadOnlyCollection<OutputFile> files)
+    {
+        var dimensions = new Dictionary<OutputFile, (int Width, int Height)>();
+        foreach (var file in files.Where(static f => IsImage(f.FileName)))
+        {
+            if (_imageDownscaler.TryGetDimensions(file) is { } size)
+            {
+                dimensions[file] = size;
+            }
+        }
+
+        return dimensions;
+    }
+
+    // Extreme-aspect images are routed to the document group and never reach this
+    // method, so they are always sent full-resolution: downscaling them cannot make
+    // them a valid photo (2560x2560 preserves the aspect ratio) and would only
+    // discard detail.
+    private PlannedMedia DownscaleIfOversized(
+        PlannedMedia item,
+        IReadOnlyDictionary<OutputFile, (int Width, int Height)> imageDimensions) =>
+        item.Kind == OutputMediaKind.Photo && NeedsDownscaling(item.File, imageDimensions)
             ? item with { File = _imageDownscaler.FitWithinBounds(item.File) }
             : item;
 
