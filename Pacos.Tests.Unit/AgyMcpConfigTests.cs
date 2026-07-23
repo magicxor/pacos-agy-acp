@@ -13,6 +13,8 @@ internal sealed class AgyMcpConfigTests
 {
     private const string WorkspaceRoot = "/tmp/pacos-agy";
 
+    private const string BrainDir = "/home/agent/.gemini/antigravity-cli/brain";
+
     private static readonly string[] ExpectedGalleryDlArgs = ["/opt/gallerydl-mcp/GalleryDl.McpServer.dll"];
 
     private static readonly string[] ExpectedFileMcpArgs = ["/opt/file-mcp/FileMcp.dll"];
@@ -35,7 +37,7 @@ internal sealed class AgyMcpConfigTests
     [Test]
     public void BuildConfigJson_DefaultGalleryDlServer_MatchesAgyOnDiskFormat()
     {
-        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot);
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir);
         var gallerydl = GetServer(json, "gallerydl");
 
         Assert.Multiple(() =>
@@ -70,7 +72,7 @@ internal sealed class AgyMcpConfigTests
     [Test]
     public void BuildConfigJson_DefaultFileMcpServer_MatchesAgyOnDiskFormat()
     {
-        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot);
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir);
         var filemcp = GetServer(json, "filemcp");
 
         Assert.Multiple(() =>
@@ -80,15 +82,15 @@ internal sealed class AgyMcpConfigTests
                 filemcp["args"]?.AsArray().Select(node => node?.GetValue<string>()),
                 Is.EqualTo(ExpectedFileMcpArgs));
 
-            // Both allow-list patterns are pinned to the workspace subtree via the
-            // {workspaceRoot} placeholder; the baked appsettings.json empties the arrays
-            // so a single index-0 override fully defines each side (no index 1).
+            // The source is pinned to the (regex-escaped) brain staging dir and the target
+            // to the per-turn output dir under the workspace root; the baked appsettings.json
+            // empties the arrays so a single index-0 override fully defines each side (no index 1).
             Assert.That(
                 filemcp["env"]?["FileMove__AllowedSourcePatterns__0"]?.GetValue<string>(),
-                Is.EqualTo($"^{WorkspaceRoot}(/.*)?$"));
+                Is.EqualTo("^/home/agent/\\.gemini/antigravity-cli/brain(/.*)?$"));
             Assert.That(
                 filemcp["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
-                Is.EqualTo($"^{WorkspaceRoot}(/.*)?$"));
+                Is.EqualTo($"^{WorkspaceRoot}/[^/]+/\\.turns/[^/]+/output(/.*)?$"));
             Assert.That(
                 filemcp["env"]?.AsObject().ContainsKey("FileMove__AllowedSourcePatterns__1"),
                 Is.False);
@@ -114,7 +116,7 @@ internal sealed class AgyMcpConfigTests
             ["remote"] = new() { Type = ServerType.Sse, Url = "https://example.com/sse" },
         };
 
-        var remote = GetServer(AgyMcpConfigHostedService.BuildConfigJson(servers, WorkspaceRoot), "remote");
+        var remote = GetServer(AgyMcpConfigHostedService.BuildConfigJson(servers, WorkspaceRoot, BrainDir), "remote");
 
         Assert.Multiple(() =>
         {
@@ -129,7 +131,7 @@ internal sealed class AgyMcpConfigTests
     {
         var mcpServers = CreateOptions().McpServers;
 
-        var json = AgyMcpConfigHostedService.BuildConfigJson(mcpServers, "/data/work");
+        var json = AgyMcpConfigHostedService.BuildConfigJson(mcpServers, "/data/work", BrainDir);
         var env = GetServer(json, "gallerydl")["env"];
 
         Assert.Multiple(() =>

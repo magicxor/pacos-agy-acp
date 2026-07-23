@@ -98,13 +98,15 @@ public sealed class PacosOptions
                 // The Dockerfile empties both allow-list arrays in the server's
                 // appsettings.json at image build time, so these single index-0
                 // overrides fully define the allow-list (arrays merge per index across
-                // configuration providers). Confine both the source and the target to
-                // the per-chat workspace subtree (which contains the per-turn output
-                // dir), mirroring gallerydl's workspace-root scoping. The resolved root
-                // is a plain /tmp path with no regex metacharacters, so it is safe to
-                // inline into these anchored FileMove patterns.
-                ["FileMove__AllowedSourcePatterns__0"] = $"^{Const.WorkspaceRootPlaceholder}(/.*)?$",
-                ["FileMove__AllowedTargetPatterns__0"] = $"^{Const.WorkspaceRootPlaceholder}(/.*)?$",
+                // configuration providers). The ONLY movement the agent may perform is
+                // delivering a generated file from the agy brain staging dir into the
+                // per-turn output dir, so the source is pinned to the brain dir and the
+                // target to the per-turn output dir (<root>/<chatId>/.turns/<turnId>/output).
+                // {workspaceRoot} is a plain /tmp path with no regex metacharacters (safe
+                // to inline raw); {brainDir} is regex-escaped during substitution because
+                // the brain path contains '.' (see AgyMcpConfigHostedService).
+                ["FileMove__AllowedSourcePatterns__0"] = $"^{Const.BrainDirPlaceholder}(/.*)?$",
+                ["FileMove__AllowedTargetPatterns__0"] = $"^{Const.WorkspaceRootPlaceholder}/[^/]+/\\.turns/[^/]+/output(/.*)?$",
                 // Per-turn files are destroyed once the turn ends, so any file the agent
                 // can legitimately move was created during the current turn (bounded by
                 // PromptTimeoutSeconds, default 300s). Keep this a tight, turn-scoped
@@ -120,18 +122,15 @@ public sealed class PacosOptions
 #pragma warning restore S5332
 
     /// <summary>
-    /// Which set of agy <c>command(...)</c> permission rules to write into
-    /// settings.json. Lets you A/B different hardening strategies at runtime
-    /// without rebuilding. Accepted values (case-insensitive):
+    /// Which set of agy command-permission rules to write into settings.json.
+    /// Accepted values (case-insensitive):
     /// <list type="bullet">
-    /// <item><c>nolookahead</c> (default) — RE2-safe whitelist expressed as a set of
-    /// fully-anchored deny patterns (no negative lookahead). Robust to agy's actual
-    /// regex engine and matching semantics.</item>
-    /// <item><c>lookahead</c> — compact whitelist using negative lookahead; only works
-    /// if agy's engine is PCRE-style. Fails (blocks everything) on an RE2 engine.</item>
-    /// <item><c>denyall</c> — block every shell command (<c>command(*)</c>).</item>
-    /// <item><c>off</c> — no command rules at all (agy default-allows commands).</item>
+    /// <item><c>denyall</c> (default) — block every shell command by denying both the
+    /// <c>command(*)</c> and <c>unsandboxed(*)</c> verbs. The agent has no legitimate
+    /// use for the shell: file delivery goes through the filemcp MCP server.</item>
+    /// <item><c>off</c> — no command rules at all (agy default-allows commands). For
+    /// local debugging only.</item>
     /// </list>
     /// </summary>
-    public string AgyCommandRuleMode { get; set; } = "nolookahead";
+    public string AgyCommandRuleMode { get; set; } = "denyall";
 }
