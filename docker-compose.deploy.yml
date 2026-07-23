@@ -28,10 +28,14 @@ services:
       - Pacos__AllowedChatIds__8=${PACOS__ALLOWEDCHATIDS__8}
       - Pacos__AllowedChatIds__9=${PACOS__ALLOWEDCHATIDS__9}
       - Pacos__ChatModel=${PACOS__CHATMODEL}
+      # Shared crawl4ai bearer token (same value as the crawl4ai service's CRAWL4AI_API_TOKEN),
+      # forwarded to the Crawl4AiMcp server so it can authenticate against the sidecar.
+      - Pacos__Crawl4AiApiToken=${CRAWL4AI_API_TOKEN}
     volumes:
       - agy-state:/home/agent/.gemini
     depends_on:
       - gallerydl-webapi
+      - crawl4ai
     networks:
       - pacos-net
 
@@ -48,6 +52,31 @@ services:
       # /etc/gallery-dl.conf is a system-wide config path gallery-dl reads regardless of
       # which user the container process runs as.
       - ./gallery-dl.conf:/etc/gallery-dl.conf:ro
+    networks:
+      - pacos-net
+
+  # Crawl4AI REST backend for a (future) custom MCP server that runs inside the
+  # pacos container (spawned by agy). Reachable only on the compose network as
+  # http://crawl4ai:11235 - no published ports. shm_size is required: crawl4ai
+  # drives headless Chromium and the default 64MB /dev/shm makes pages crash.
+  crawl4ai:
+    image: unclecode/crawl4ai:0.9.2
+    container_name: ${CONTAINER_NAME}-crawl4ai
+    restart: always
+    shm_size: 1gb
+    environment:
+      # REQUIRED: without a token crawl4ai 0.9.x binds to 127.0.0.1 only, so the pacos container
+      # cannot reach it over the compose network (every call fails with "Connection refused") -
+      # and the in-container /health check still passes over loopback, masking the outage. With a
+      # token set it binds 0.0.0.0 and requires this bearer token on every request; the pacos
+      # service forwards the same value to the Crawl4AiMcp server via Pacos__Crawl4AiApiToken.
+      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11235/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - pacos-net
 

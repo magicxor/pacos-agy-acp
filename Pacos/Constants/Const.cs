@@ -60,6 +60,12 @@ public static class Const
                                                     - Если инструмент вернул ошибку, покажи пользователю её текст.
                                                     """;
 
+    public const string Crawl4AiRuleSystemPrompt = """
+                                                    # ВЕБ-СТРАНИЦЫ, СКРИНШОТЫ, PDF (MCP crawl4ai)
+                                                    - Чтобы прочитать веб-страницу, сделать её скриншот или PDF, используй MCP-инструменты сервера crawl4ai: md (страница в Markdown), html, screenshot, pdf, crawl (несколько URL сразу), ask.
+                                                    - Результат сохраняется в директорию из параметра outputDirectory: если файл нужно отдать пользователю — указывай выходную директорию, если он нужен только тебе для ответа — временную (пути бери из меток [SYSTEM: ...]).
+                                                    """;
+
     // Placeholder usable in MCP server env values (PacosOptions.McpServers); replaced
     // at startup with the resolved workspace root by AgyMcpConfigHostedService.
     public const string WorkspaceRootPlaceholder = "{workspaceRoot}";
@@ -73,6 +79,10 @@ public static class Const
     // a literal path prefix and must keep it unescaped). Replaced at startup by
     // AgyMcpConfigHostedService.
     public const string WorkspaceRootPatternPlaceholder = "{workspaceRootPattern}";
+
+    // Placeholder for the crawl4ai REST API bearer token. Substituted raw into the crawl4ai MCP
+    // server env at startup with PacosOptions.Crawl4AiApiToken by AgyMcpConfigHostedService.
+    public const string Crawl4AiApiTokenPlaceholder = "{crawl4aiApiToken}";
 
     public const int MaxTelegramMessageLength = 4096;
     public const int MaxTelegramRichMessageLength = 32768;

@@ -55,6 +55,18 @@ public sealed class PacosOptions
     public string? GeminiApiKey { get; set; }
 
     /// <summary>
+    /// Bearer token for the crawl4ai REST backend (sent by the Crawl4AiMcp server as
+    /// <c>Authorization: Bearer &lt;token&gt;</c>). Shared secret: the crawl4ai sidecar must be
+    /// started with the same value in its <c>CRAWL4AI_API_TOKEN</c> environment variable. This is
+    /// mandatory in practice — a token-less crawl4ai 0.9.x binds to loopback only and is
+    /// unreachable from the pacos container (every call fails with "Connection refused"). The value
+    /// is substituted into the crawl4ai MCP server env in place of
+    /// <see cref="Const.Crawl4AiApiTokenPlaceholder"/> at startup by
+    /// <see cref="Services.Acp.AgyMcpConfigHostedService"/>.
+    /// </summary>
+    public string? Crawl4AiApiToken { get; set; }
+
+    /// <summary>
     /// Hard timeout (in seconds) for a single prompt round-trip to agy-acp.
     /// Also forwarded to agy as <c>--print-timeout</c> so the CLI's own headless
     /// timeout (default 5m) never undercuts this value.
@@ -118,6 +130,31 @@ public sealed class PacosOptions
                 // (there are no legitimately old files to move); if PromptTimeoutSeconds
                 // is ever raised above this, bump this in step, not the other way around.
                 ["FileMove__MaxFileAgeSeconds"] = "600",
+            },
+        },
+        ["crawl4ai"] = new McpServer
+        {
+            Command = "dotnet",
+            Args = ["/opt/crawl4ai-mcp/Crawl4AiMcp.dll"],
+            Env = new Dictionary<string, string?>
+            {
+                // crawl4ai REST backend, reachable only on the internal compose network.
+                ["Crawl4Ai__BaseUrl"] = "http://crawl4ai:11235",
+                // Bearer token for the crawl4ai backend, substituted at startup from
+                // PacosOptions.Crawl4AiApiToken. The crawl4ai sidecar MUST be started with the same
+                // value in CRAWL4AI_API_TOKEN: without it crawl4ai 0.9.x binds loopback-only and is
+                // unreachable from this container (Connection refused), and with it every call must
+                // carry the matching bearer token or the backend returns HTTP 401.
+                ["Crawl4Ai__ApiToken"] = Const.Crawl4AiApiTokenPlaceholder,
+                // The Dockerfile empties AllowedOutputPatterns in the server's appsettings.json
+                // at image build time, so this single index-0 override fully defines the allow-list
+                // (an empty list is deny-all). Constrain writes to the per-turn output dir (delivered
+                // to the user) and the per-turn temp dir (agent scratch for downloads it only needs to
+                // read — never delivered); both are removed when the turn ends. The regex-escaped
+                // {workspaceRootPattern} is used (not the raw {workspaceRoot}) because
+                // WorkingDirectoryRoot is user-configurable and may contain regex metacharacters
+                // (see AgyMcpConfigHostedService).
+                ["Crawl4Ai__AllowedOutputPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$",
             },
         },
     };

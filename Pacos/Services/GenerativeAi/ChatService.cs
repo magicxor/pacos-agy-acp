@@ -61,7 +61,7 @@ public sealed class ChatService : IAsyncDisposable
                 }
             }
 
-            var prompt = BuildPrompt(messageText, inputFiles, workspace.OutputDirectory);
+            var prompt = BuildPrompt(messageText, inputFiles, workspace.OutputDirectory, workspace.TempDirectory);
 
             var responseText = await _sessionPool.PromptAsync(chatId, prompt, CancellationToken.None);
 
@@ -95,7 +95,7 @@ public sealed class ChatService : IAsyncDisposable
         }
     }
 
-    private static string BuildPrompt(string messageText, IReadOnlyList<(string Path, ChatInputOrigin Origin)> inputFiles, string outputDirectory)
+    private static string BuildPrompt(string messageText, IReadOnlyList<(string Path, ChatInputOrigin Origin)> inputFiles, string outputDirectory, string tempDirectory)
     {
         var builder = new StringBuilder();
 
@@ -110,10 +110,13 @@ public sealed class ChatService : IAsyncDisposable
         }
 
         // Detailed file-delivery rules live in the steering file (GEMINI.md); here
-        // we only point at this turn's output directory.
+        // we only point at this turn's output and temp directories.
         builder
             .Append("[SYSTEM: Выходная директория для файлов: ")
             .Append(outputDirectory)
+            .AppendLine("]")
+            .Append("[SYSTEM: Временная директория (не отправляется пользователю): ")
+            .Append(tempDirectory)
             .AppendLine("]")
             .AppendLine();
 
@@ -149,6 +152,8 @@ public sealed class ChatService : IAsyncDisposable
                + Const.FileDeliveryRuleSystemPrompt
                + Environment.NewLine + Environment.NewLine
                + Const.GalleryDownloadRuleSystemPrompt
+               + Environment.NewLine + Environment.NewLine
+               + Const.Crawl4AiRuleSystemPrompt
                + Environment.NewLine + Environment.NewLine
                + $"Дата начала текущей сессии: {sessionStart}";
     }

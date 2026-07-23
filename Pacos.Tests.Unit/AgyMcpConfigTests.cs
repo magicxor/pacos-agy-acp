@@ -15,9 +15,13 @@ internal sealed class AgyMcpConfigTests
 
     private const string BrainDir = "/home/agent/.gemini/antigravity-cli/brain";
 
+    private const string ApiToken = "test-crawl4ai-token";
+
     private static readonly string[] ExpectedGalleryDlArgs = ["/opt/gallerydl-mcp/GalleryDl.McpServer.dll"];
 
     private static readonly string[] ExpectedFileMcpArgs = ["/opt/file-mcp/FileMcp.dll"];
+
+    private static readonly string[] ExpectedCrawl4AiArgs = ["/opt/crawl4ai-mcp/Crawl4AiMcp.dll"];
 
     private static PacosOptions CreateOptions() => new()
     {
@@ -37,7 +41,7 @@ internal sealed class AgyMcpConfigTests
     [Test]
     public void BuildConfigJson_DefaultGalleryDlServer_MatchesAgyOnDiskFormat()
     {
-        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir);
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir, ApiToken);
         var gallerydl = GetServer(json, "gallerydl");
 
         Assert.Multiple(() =>
@@ -72,7 +76,7 @@ internal sealed class AgyMcpConfigTests
     [Test]
     public void BuildConfigJson_DefaultFileMcpServer_MatchesAgyOnDiskFormat()
     {
-        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir);
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir, ApiToken);
         var filemcp = GetServer(json, "filemcp");
 
         Assert.Multiple(() =>
@@ -109,12 +113,53 @@ internal sealed class AgyMcpConfigTests
     }
 
     [Test]
+    public void BuildConfigJson_DefaultCrawl4AiServer_MatchesAgyOnDiskFormat()
+    {
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir, ApiToken);
+        var crawl4ai = GetServer(json, "crawl4ai");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(crawl4ai["command"]?.GetValue<string>(), Is.EqualTo("dotnet"));
+            Assert.That(
+                crawl4ai["args"]?.AsArray().Select(node => node?.GetValue<string>()),
+                Is.EqualTo(ExpectedCrawl4AiArgs));
+
+            // Backend URL points at the crawl4ai sidecar on the internal compose network.
+            Assert.That(
+                crawl4ai["env"]?["Crawl4Ai__BaseUrl"]?.GetValue<string>(),
+                Is.EqualTo("http://crawl4ai:11235"));
+
+            // The bearer-token placeholder is substituted with the configured Crawl4AiApiToken.
+            Assert.That(
+                crawl4ai["env"]?["Crawl4Ai__ApiToken"]?.GetValue<string>(),
+                Is.EqualTo(ApiToken));
+
+            // Writes are constrained to the per-turn output dir; the baked appsettings.json empties
+            // the array so a single index-0 override fully defines the allow-list (no index 1).
+            Assert.That(
+                crawl4ai["env"]?["Crawl4Ai__AllowedOutputPatterns__0"]?.GetValue<string>(),
+                Is.EqualTo($"^{WorkspaceRoot}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$"));
+            Assert.That(
+                crawl4ai["env"]?.AsObject().ContainsKey("Crawl4Ai__AllowedOutputPatterns__1"),
+                Is.False);
+
+            // agy's own on-disk format for stdio entries is bare command/args/env:
+            // no "type", "headers", "envFile" or "url" members may appear.
+            Assert.That(crawl4ai.ContainsKey("type"), Is.False);
+            Assert.That(crawl4ai.ContainsKey("headers"), Is.False);
+            Assert.That(crawl4ai.ContainsKey("envFile"), Is.False);
+            Assert.That(crawl4ai.ContainsKey("url"), Is.False);
+        });
+    }
+
+    [Test]
     public void BuildConfigJson_FileMcpTargetPattern_RegexEscapesConfigurableWorkspaceRoot()
     {
         // A user-configured WorkingDirectoryRoot may contain regex metacharacters; they must be
         // escaped inside the FileMove target regex, yet left raw in gallerydl's literal prefix.
         const string root = "/srv/p.g+1";
-        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, root, BrainDir);
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, root, BrainDir, ApiToken);
 
         Assert.Multiple(() =>
         {
@@ -136,7 +181,7 @@ internal sealed class AgyMcpConfigTests
         options.WorkingDirectoryRoot = "/data/work/";
 
         var root = AcpSessionPool.ResolveRoot(options);
-        var json = AgyMcpConfigHostedService.BuildConfigJson(options.McpServers, root, BrainDir);
+        var json = AgyMcpConfigHostedService.BuildConfigJson(options.McpServers, root, BrainDir, ApiToken);
 
         Assert.Multiple(() =>
         {
@@ -155,7 +200,7 @@ internal sealed class AgyMcpConfigTests
             ["remote"] = new() { Type = ServerType.Sse, Url = "https://example.com/sse" },
         };
 
-        var remote = GetServer(AgyMcpConfigHostedService.BuildConfigJson(servers, WorkspaceRoot, BrainDir), "remote");
+        var remote = GetServer(AgyMcpConfigHostedService.BuildConfigJson(servers, WorkspaceRoot, BrainDir, ApiToken), "remote");
 
         Assert.Multiple(() =>
         {
@@ -170,7 +215,7 @@ internal sealed class AgyMcpConfigTests
     {
         var mcpServers = CreateOptions().McpServers;
 
-        var json = AgyMcpConfigHostedService.BuildConfigJson(mcpServers, "/data/work", BrainDir);
+        var json = AgyMcpConfigHostedService.BuildConfigJson(mcpServers, "/data/work", BrainDir, ApiToken);
         var env = GetServer(json, "gallerydl")["env"];
 
         Assert.Multiple(() =>

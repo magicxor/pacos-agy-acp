@@ -4,10 +4,27 @@ services:
     build:
       context: .
       dockerfile: Pacos/Dockerfile
+    environment:
+      # Shared crawl4ai bearer token. Must match the crawl4ai service's CRAWL4AI_API_TOKEN
+      # (both interpolate the same variable) so the Crawl4AiMcp server can authenticate. The
+      # local default keeps dev working with no setup; override by exporting CRAWL4AI_API_TOKEN.
+      - Pacos__Crawl4AiApiToken=${CRAWL4AI_API_TOKEN:-dev-local-crawl4ai-token}
     depends_on:
       - gallerydl-webapi
+      - crawl4ai
 
   # gallery-dl backend for the GalleryDl MCP server (spawned by agy inside the
   # pacos container). Same wiring as production: http://gallerydl-webapi:8080.
   gallerydl-webapi:
     image: ghcr.io/magicxor/gallerydl-webapi:0.3.1
+
+  # Crawl4AI backend for the (future) custom MCP server (spawned by agy inside
+  # the pacos container). Same wiring as production: http://crawl4ai:11235.
+  crawl4ai:
+    image: unclecode/crawl4ai:0.9.2
+    shm_size: 1gb
+    environment:
+      # Without a token crawl4ai 0.9.x binds to 127.0.0.1 only and is unreachable from the
+      # pacos container (Connection refused). Setting a token makes it bind 0.0.0.0 and requires
+      # the same bearer token on every call — the pacos service passes the same value to the MCP.
+      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN:-dev-local-crawl4ai-token}
