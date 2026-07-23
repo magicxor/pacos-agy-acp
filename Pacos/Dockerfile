@@ -78,6 +78,22 @@ RUN mkdir -p /opt/file-mcp && \
     jq '.FileMove.AllowedSourcePatterns = [] | .FileMove.AllowedTargetPatterns = []' /opt/file-mcp/appsettings.json > /opt/file-mcp/appsettings.json.tmp && \
     mv /opt/file-mcp/appsettings.json.tmp /opt/file-mcp/appsettings.json
 
+# Install the Crawl4AiMcp MCP server (https://github.com/magicxor/Crawl4AiMcp), pinned to a
+# released version. The framework-dependent build is arch-neutral IL; agy spawns it as
+# `dotnet /opt/crawl4ai-mcp/Crawl4AiMcp.dll` according to the mcp_config.json written at
+# startup by AgyMcpConfigHostedService. It is a local stdio server that proxies the crawl4ai
+# REST backend (the crawl4ai sidecar container on the compose network, http://crawl4ai:11235).
+# Empty the output-dir allow-list in the shipped appsettings.json so the baked-in baseline
+# allows nothing (Crawl4AiMcp treats an empty pattern list as deny-all) and the env override
+# written by AgyMcpConfigHostedService fully defines it. Fail-closed: if the override ever
+# goes missing every write is blocked.
+ENV CRAWL4AI_MCP_VERSION=0.0.2
+RUN mkdir -p /opt/crawl4ai-mcp && \
+    curl -fsSL "https://github.com/magicxor/Crawl4AiMcp/releases/download/${CRAWL4AI_MCP_VERSION}/Crawl4AiMcp-${CRAWL4AI_MCP_VERSION}.tar.gz" \
+      | tar -xz -C /opt/crawl4ai-mcp && \
+    jq '.Crawl4Ai.AllowedOutputPatterns = []' /opt/crawl4ai-mcp/appsettings.json > /opt/crawl4ai-mcp/appsettings.json.tmp && \
+    mv /opt/crawl4ai-mcp/appsettings.json.tmp /opt/crawl4ai-mcp/appsettings.json
+
 # Pin the agy CLI to the installed version; never let it self-update at runtime.
 ENV AGY_CLI_DISABLE_AUTO_UPDATE=true
 
