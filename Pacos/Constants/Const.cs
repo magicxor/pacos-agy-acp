@@ -70,6 +70,7 @@ public static class Const
     public const int MaxTelegramCaptionLength = 1024;
     public const int MaxTelegramMediaGroupSize = 10;
     public const int MaxTelegramPhotoSizeBytes = 10 * 1024 * 1024;
+    public const int MaxTelegramFileSizeBytes = 50 * 1024 * 1024;
     public const string DrawCommand = "!drawx";
     public const string ResetCommand = "!resetx";
 }
