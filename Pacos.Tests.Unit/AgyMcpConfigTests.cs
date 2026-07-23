@@ -19,6 +19,8 @@ internal sealed class AgyMcpConfigTests
 
     private static readonly string[] ExpectedFileMcpArgs = ["/opt/file-mcp/FileMcp.dll"];
 
+    private static readonly string[] ExpectedCrawl4AiArgs = ["/opt/crawl4ai-mcp/Crawl4AiMcp.dll"];
+
     private static PacosOptions CreateOptions() => new()
     {
         TelegramBotApiKey = "123:abc",
@@ -105,6 +107,42 @@ internal sealed class AgyMcpConfigTests
             Assert.That(filemcp.ContainsKey("headers"), Is.False);
             Assert.That(filemcp.ContainsKey("envFile"), Is.False);
             Assert.That(filemcp.ContainsKey("url"), Is.False);
+        });
+    }
+
+    [Test]
+    public void BuildConfigJson_DefaultCrawl4AiServer_MatchesAgyOnDiskFormat()
+    {
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir);
+        var crawl4ai = GetServer(json, "crawl4ai");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(crawl4ai["command"]?.GetValue<string>(), Is.EqualTo("dotnet"));
+            Assert.That(
+                crawl4ai["args"]?.AsArray().Select(node => node?.GetValue<string>()),
+                Is.EqualTo(ExpectedCrawl4AiArgs));
+
+            // Backend URL points at the crawl4ai sidecar on the internal compose network.
+            Assert.That(
+                crawl4ai["env"]?["Crawl4Ai__BaseUrl"]?.GetValue<string>(),
+                Is.EqualTo("http://crawl4ai:11235"));
+
+            // Writes are constrained to the per-turn output dir; the baked appsettings.json empties
+            // the array so a single index-0 override fully defines the allow-list (no index 1).
+            Assert.That(
+                crawl4ai["env"]?["Crawl4Ai__AllowedOutputPatterns__0"]?.GetValue<string>(),
+                Is.EqualTo($"^{WorkspaceRoot}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$"));
+            Assert.That(
+                crawl4ai["env"]?.AsObject().ContainsKey("Crawl4Ai__AllowedOutputPatterns__1"),
+                Is.False);
+
+            // agy's own on-disk format for stdio entries is bare command/args/env:
+            // no "type", "headers", "envFile" or "url" members may appear.
+            Assert.That(crawl4ai.ContainsKey("type"), Is.False);
+            Assert.That(crawl4ai.ContainsKey("headers"), Is.False);
+            Assert.That(crawl4ai.ContainsKey("envFile"), Is.False);
+            Assert.That(crawl4ai.ContainsKey("url"), Is.False);
         });
     }
 
