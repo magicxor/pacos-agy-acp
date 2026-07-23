@@ -13,7 +13,11 @@ internal sealed class AgyMcpConfigTests
 {
     private const string WorkspaceRoot = "/tmp/pacos-agy";
 
+    private const string BrainDir = "/home/agent/.gemini/antigravity-cli/brain";
+
     private static readonly string[] ExpectedGalleryDlArgs = ["/opt/gallerydl-mcp/GalleryDl.McpServer.dll"];
+
+    private static readonly string[] ExpectedFileMcpArgs = ["/opt/file-mcp/FileMcp.dll"];
 
     private static PacosOptions CreateOptions() => new()
     {
@@ -33,7 +37,7 @@ internal sealed class AgyMcpConfigTests
     [Test]
     public void BuildConfigJson_DefaultGalleryDlServer_MatchesAgyOnDiskFormat()
     {
-        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot);
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir);
         var gallerydl = GetServer(json, "gallerydl");
 
         Assert.Multiple(() =>
@@ -66,6 +70,84 @@ internal sealed class AgyMcpConfigTests
     }
 
     [Test]
+    public void BuildConfigJson_DefaultFileMcpServer_MatchesAgyOnDiskFormat()
+    {
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir);
+        var filemcp = GetServer(json, "filemcp");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(filemcp["command"]?.GetValue<string>(), Is.EqualTo("dotnet"));
+            Assert.That(
+                filemcp["args"]?.AsArray().Select(node => node?.GetValue<string>()),
+                Is.EqualTo(ExpectedFileMcpArgs));
+
+            // The source is pinned to the (regex-escaped) brain staging dir and the target
+            // to the per-turn output dir under the workspace root; the baked appsettings.json
+            // empties the arrays so a single index-0 override fully defines each side (no index 1).
+            Assert.That(
+                filemcp["env"]?["FileMove__AllowedSourcePatterns__0"]?.GetValue<string>(),
+                Is.EqualTo("^/home/agent/\\.gemini/antigravity-cli/brain(/.*)?$"));
+            Assert.That(
+                filemcp["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
+                Is.EqualTo($"^{WorkspaceRoot}/[^/]+/\\.turns/[^/]+/output(/.*)?$"));
+            Assert.That(
+                filemcp["env"]?.AsObject().ContainsKey("FileMove__AllowedSourcePatterns__1"),
+                Is.False);
+            Assert.That(
+                filemcp["env"]?.AsObject().ContainsKey("FileMove__AllowedTargetPatterns__1"),
+                Is.False);
+            Assert.That(filemcp["env"]?["FileMove__MaxFileAgeSeconds"]?.GetValue<string>(), Is.EqualTo("600"));
+
+            // agy's own on-disk format for stdio entries is bare command/args/env:
+            // no "type", "headers", "envFile" or "url" members may appear.
+            Assert.That(filemcp.ContainsKey("type"), Is.False);
+            Assert.That(filemcp.ContainsKey("headers"), Is.False);
+            Assert.That(filemcp.ContainsKey("envFile"), Is.False);
+            Assert.That(filemcp.ContainsKey("url"), Is.False);
+        });
+    }
+
+    [Test]
+    public void BuildConfigJson_FileMcpTargetPattern_RegexEscapesConfigurableWorkspaceRoot()
+    {
+        // A user-configured WorkingDirectoryRoot may contain regex metacharacters; they must be
+        // escaped inside the FileMove target regex, yet left raw in gallerydl's literal prefix.
+        const string root = "/srv/p.g+1";
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, root, BrainDir);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                GetServer(json, "filemcp")["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
+                Is.EqualTo(@"^/srv/p\.g\+1/[^/]+/\.turns/[^/]+/output(/.*)?$"));
+            Assert.That(
+                GetServer(json, "gallerydl")["env"]?["GalleryDlApi__AllowedPathPrefixes__0"]?.GetValue<string>(),
+                Is.EqualTo(root));
+        });
+    }
+
+    [Test]
+    public void ResolveRoot_TrimsTrailingSeparatorSoTargetPatternHasNoDoubleSlash()
+    {
+        // A configured root with a trailing separator must not leak a doubled separator into
+        // the FileMove target regex (which would never match the real output path).
+        var options = CreateOptions();
+        options.WorkingDirectoryRoot = "/data/work/";
+
+        var root = AcpSessionPool.ResolveRoot(options);
+        var json = AgyMcpConfigHostedService.BuildConfigJson(options.McpServers, root, BrainDir);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(root, Is.EqualTo("/data/work"));
+            Assert.That(
+                GetServer(json, "filemcp")["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
+                Is.EqualTo(@"^/data/work/[^/]+/\.turns/[^/]+/output(/.*)?$"));
+        });
+    }
+
+    [Test]
     public void BuildConfigJson_SseServer_EmitsLowercaseTypeAndUrl()
     {
         var servers = new Dictionary<string, McpServer>
@@ -73,7 +155,7 @@ internal sealed class AgyMcpConfigTests
             ["remote"] = new() { Type = ServerType.Sse, Url = "https://example.com/sse" },
         };
 
-        var remote = GetServer(AgyMcpConfigHostedService.BuildConfigJson(servers, WorkspaceRoot), "remote");
+        var remote = GetServer(AgyMcpConfigHostedService.BuildConfigJson(servers, WorkspaceRoot, BrainDir), "remote");
 
         Assert.Multiple(() =>
         {
@@ -88,7 +170,7 @@ internal sealed class AgyMcpConfigTests
     {
         var mcpServers = CreateOptions().McpServers;
 
-        var json = AgyMcpConfigHostedService.BuildConfigJson(mcpServers, "/data/work");
+        var json = AgyMcpConfigHostedService.BuildConfigJson(mcpServers, "/data/work", BrainDir);
         var env = GetServer(json, "gallerydl")["env"];
 
         Assert.Multiple(() =>
