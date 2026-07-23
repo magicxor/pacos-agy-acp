@@ -62,7 +62,7 @@ public static class Const
 
     public const string Crawl4AiRuleSystemPrompt = """
                                                     # ВЕБ-СТРАНИЦЫ, СКРИНШОТЫ, PDF (MCP crawl4ai)
-                                                    - Чтобы прочитать веб-страницу, сделать её скриншот или PDF, используй MCP-инструменты сервера crawl4ai: md (страница в Markdown), html, screenshot, pdf, crawl (несколько URL сразу), execute_js, ask.
+                                                    - Чтобы прочитать веб-страницу, сделать её скриншот или PDF, используй MCP-инструменты сервера crawl4ai: md (страница в Markdown), html, screenshot, pdf, crawl (несколько URL сразу), ask.
                                                     - Результат сохраняется в директорию из параметра outputDirectory: если файл нужно отдать пользователю — указывай выходную директорию, если он нужен только тебе для ответа — временную (пути бери из меток [SYSTEM: ...]).
                                                     """;
 
