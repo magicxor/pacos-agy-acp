@@ -43,7 +43,18 @@ public sealed class DrawHandler
             ? GetImageMetadata(updateMessage.ReplyToMessage)
             : null;
 
-        if (string.IsNullOrWhiteSpace(prompt) && userImageMetadata is null && repliedImageMetadata is null)
+        // A bare command replying to a message is a request to visualize that message,
+        // so its text counts as a prompt source too.
+        var repliedToMessageText = (updateMessage.ReplyToMessage?.Text
+                                    ?? updateMessage.ReplyToMessage?.Caption
+                                    ?? updateMessage.ReplyToMessage?.RichMessage.GetPlainText()
+                                    ?? string.Empty)
+            .Trim();
+
+        if (string.IsNullOrWhiteSpace(prompt)
+            && repliedToMessageText.Length == 0
+            && userImageMetadata is null
+            && repliedImageMetadata is null)
         {
             await botClient.SendMessage(
                 chatId: updateMessage.Chat.Id,
@@ -59,7 +70,7 @@ public sealed class DrawHandler
         await AddImageAsync(repliedImageMetadata, ChatInputOrigin.RepliedMessage);
 
         var isGroupChat = updateMessage.Chat.Type is ChatType.Group or ChatType.Supergroup;
-        var drawMessage = BuildDrawMessage(author, prompt, attachments.Count);
+        var drawMessage = BuildDrawMessage(author, prompt, repliedToMessageText, attachments.Count);
 
         ChatResponseInfo response;
         try
@@ -125,7 +136,7 @@ public sealed class DrawHandler
         }
     }
 
-    private static string BuildDrawMessage(string author, string prompt, int imageCount)
+    internal static string BuildDrawMessage(string author, string prompt, string repliedToMessageText, int imageCount)
     {
         var basis = imageCount switch
         {
@@ -134,9 +145,19 @@ public sealed class DrawHandler
             _ => "Используя прикреплённые изображения как основу, сгенерируй новое изображение",
         };
 
-        var request = string.IsNullOrWhiteSpace(prompt)
-            ? $"{author}: {basis}."
-            : $"{author}: {basis} по запросу: {prompt}.";
+        string request;
+        if (!string.IsNullOrWhiteSpace(prompt))
+        {
+            request = $"{author}: {basis} по запросу: {prompt}.";
+        }
+        else if (repliedToMessageText.Length > 0)
+        {
+            request = $"{author}: {basis}, визуализирующее следующее сообщение: {repliedToMessageText}.";
+        }
+        else
+        {
+            request = $"{author}: {basis}.";
+        }
 
         return request + " Обязательно сохрани результат как файл изображения в выходную директорию.";
     }
