@@ -48,6 +48,7 @@ The bot reads its settings from environment variables or an `appsettings.json` f
 - `AgyExtraArgs`: Extra arguments forwarded to every underlying `agy` invocation (via `AGY_EXTRA_ARGS`).
 - `GeminiApiKey`: Optional Gemini API key passed to the agy subprocess for non-interactive auth. When empty, agy relies on its own persisted OAuth credentials (e.g. `~/.gemini`).
 - `PromptTimeoutSeconds`: Hard timeout for a single prompt round-trip to agy-acp (default: `300`).
+- `SessionIdleTimeoutMinutes`: When a chat has been idle (no prompt to the agent) for longer than this, the next prompt starts a fresh session instead of resuming — and paying the tokens for — the stale conversation (default: `180`; `0` disables).
 - `AgyCommandRuleMode`: Which set of agy command-permission rules to write (`denyall` (default) or `off`).
 
 ## Setup and Running
