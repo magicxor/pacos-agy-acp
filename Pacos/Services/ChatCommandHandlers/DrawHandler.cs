@@ -37,13 +37,16 @@ public sealed class DrawHandler
         var prompt = messageText.Substring(Const.DrawCommand.Length).Trim();
         _logger.LogInformation("Processing {Command} command from {Author} with prompt: {Prompt}", Const.DrawCommand, author, prompt);
 
-        // Locate optional source images: the user's own message and the post it replies to.
-        var userImageMetadata = GetImageMetadata(updateMessage);
-        var repliedImageMetadata = updateMessage.ReplyToMessage is not null
-            ? GetImageMetadata(updateMessage.ReplyToMessage)
-            : null;
+        // A bare command replying to a message is a request to visualize that message,
+        // so its text counts as a prompt source too.
+        var repliedToMessageText = (updateMessage.ReplyToMessage?.Text
+                                    ?? updateMessage.ReplyToMessage?.Caption
+                                    ?? updateMessage.ReplyToMessage?.RichMessage.GetPlainText()
+                                    ?? string.Empty)
+            .Trim();
 
-        if (string.IsNullOrWhiteSpace(prompt) && userImageMetadata is null && repliedImageMetadata is null)
+        // Images alone are not enough: without any text it is unclear what to generate.
+        if (string.IsNullOrWhiteSpace(prompt) && repliedToMessageText.Length == 0)
         {
             await botClient.SendMessage(
                 chatId: updateMessage.Chat.Id,
@@ -53,13 +56,19 @@ public sealed class DrawHandler
             return;
         }
 
+        // Locate optional source images: the user's own message and the post it replies to.
+        var userImageMetadata = GetImageMetadata(updateMessage);
+        var repliedImageMetadata = updateMessage.ReplyToMessage is not null
+            ? GetImageMetadata(updateMessage.ReplyToMessage)
+            : null;
+
         // Download both images best-effort; a single failed download must not block generation.
         var attachments = new List<ChatInputFile>();
         await AddImageAsync(userImageMetadata, ChatInputOrigin.UserMessage);
         await AddImageAsync(repliedImageMetadata, ChatInputOrigin.RepliedMessage);
 
         var isGroupChat = updateMessage.Chat.Type is ChatType.Group or ChatType.Supergroup;
-        var drawMessage = BuildDrawMessage(author, prompt, attachments.Count);
+        var drawMessage = BuildDrawMessage(author, prompt, repliedToMessageText, attachments.Count);
 
         ChatResponseInfo response;
         try
@@ -125,7 +134,7 @@ public sealed class DrawHandler
         }
     }
 
-    private static string BuildDrawMessage(string author, string prompt, int imageCount)
+    internal static string BuildDrawMessage(string author, string prompt, string repliedToMessageText, int imageCount)
     {
         var basis = imageCount switch
         {
@@ -134,9 +143,19 @@ public sealed class DrawHandler
             _ => "Используя прикреплённые изображения как основу, сгенерируй новое изображение",
         };
 
-        var request = string.IsNullOrWhiteSpace(prompt)
-            ? $"{author}: {basis}."
-            : $"{author}: {basis} по запросу: {prompt}.";
+        string request;
+        if (!string.IsNullOrWhiteSpace(prompt))
+        {
+            request = $"{author}: {basis} по запросу: {prompt}.";
+        }
+        else if (repliedToMessageText.Length > 0)
+        {
+            request = $"{author}: {basis}, визуализирующее следующее сообщение: {repliedToMessageText}.";
+        }
+        else
+        {
+            request = $"{author}: {basis}.";
+        }
 
         return request + " Обязательно сохрани результат как файл изображения в выходную директорию.";
     }

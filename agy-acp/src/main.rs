@@ -32,8 +32,8 @@ impl Adapter {
         out_tx: mpsc::UnboundedSender<Option<String>>,
     ) -> PromptOutput {
         // Snapshot agy's existing cli-*.log sizes before spawning so that, if the
-        // turn produces no output, we can attribute only bytes written *during*
-        // this turn (and any swallowed backend error they record) to it, narrowing
+        // turn fails or produces no output, we can attribute only bytes written
+        // *during* this turn (and any backend error they record) to it, narrowing
         // (but not fully eliminating) the risk of picking up a stale error from an
         // earlier turn or a concurrent session. See `detect_swallowed_agy_error`.
         let log_pre_snapshot = snapshot_agy_logs(&conversations_dir);
@@ -152,18 +152,21 @@ impl Adapter {
                 if !was_cancelled && !status.success() {
                     eprintln!("[agy-acp] WARN: agy exited with status: {}", status);
                 }
-                // agy --print swallows backend failures (e.g. quota 429 /
+                // agy hides the real failure cause in both of its failure modes:
+                // `agy --print` swallows backend failures (e.g. quota 429 /
                 // RESOURCE_EXHAUSTED) with a 0 exit code and empty stdout/stderr,
-                // recording the cause only in its own cli.log; an empty successful
-                // turn is therefore almost always a hidden error. See
-                // `decide_turn_error` for the full decision logic.
-                let swallowed_error = if !was_cancelled && status.success() && !had_updates {
+                // and on a nonzero exit its stderr is a generic "Agent execution
+                // terminated due to error." — either way the specific cause is
+                // recorded only in its own cli.log. Scan it for every turn that
+                // produced no updates so the surfaced error carries the cause.
+                // See `decide_turn_error` for the full decision logic.
+                let log_error = if !was_cancelled && !had_updates {
                     detect_swallowed_agy_error(&conversations_dir, &log_pre_snapshot, spawn_time)
                 } else {
                     None
                 };
                 if let Some((code, msg)) = decide_turn_error(
-                    was_cancelled, status.success(), had_updates, &status.to_string(), &stderr_text, swallowed_error.as_deref(),
+                    was_cancelled, status.success(), had_updates, &status.to_string(), &stderr_text, log_error.as_deref(),
                 ) {
                     eprintln!("[agy-acp] surfacing turn error ({code}): {msg}");
                     return PromptOutput {
@@ -197,8 +200,11 @@ impl Adapter {
 /// Decide whether this turn's outcome should be surfaced as a JSON-RPC error
 /// instead of falling through to the normal `end_turn`/`error` `stopReason`
 /// result. `status_display` is the exit status already formatted as a string
-/// (e.g. `status.to_string()`); `swallowed_error` is the result of
-/// `detect_swallowed_agy_error` for the zero-exit-but-empty-output case.
+/// (e.g. `status.to_string()`); `log_error` is the specific cause extracted
+/// from agy's own cli.log by `detect_swallowed_agy_error`, if any. On a
+/// nonzero exit it is appended to the generic stderr/status message (agy's
+/// stderr never names the actual cause); on a zero exit with no output it is
+/// surfaced on its own as -32603.
 /// Returns `Some((code, message))` when an error should be surfaced.
 fn decide_turn_error(
     was_cancelled: bool,
@@ -206,20 +212,24 @@ fn decide_turn_error(
     had_updates: bool,
     status_display: &str,
     stderr_text: &str,
-    swallowed_error: Option<&str>,
+    log_error: Option<&str>,
 ) -> Option<(i32, String)> {
     if was_cancelled || had_updates {
         return None;
     }
     if !status_success {
-        let msg = if stderr_text.is_empty() {
+        let base = if stderr_text.is_empty() {
             format!("agy exited with status: {status_display}")
         } else {
             format!("agy failed: {}", stderr_text.trim_end())
         };
+        let msg = match log_error {
+            Some(details) => format!("{base} (cause: {details})"),
+            None => base,
+        };
         return Some((-32000, msg));
     }
-    swallowed_error.map(|details| (-32603, details.to_string()))
+    log_error.map(|details| (-32603, details.to_string()))
 }
 
 /// Match predicate for agy's `cli-*.log` files, shared by `snapshot_agy_logs` and
@@ -283,7 +293,9 @@ const MAX_LOG_SCAN_BYTES: u64 = 256 * 1024;
 /// Scan the `cli-*.log` files agy appended to during this turn for a backend
 /// error it swallowed. `agy --print` exits 0 with empty stdout/stderr when the
 /// model backend fails (e.g. quota 429 / RESOURCE_EXHAUSTED), recording the
-/// cause only in its own cli.log. A candidate must have grown past its
+/// cause only in its own cli.log; on a nonzero exit its stderr is equally
+/// uninformative, so the same scan enriches that error path too (see
+/// `decide_turn_error`). A candidate must have grown past its
 /// `pre_snapshot` size *and* been modified no more than 1s before `spawn_time`
 /// (when this turn's own agy child was spawned) — the 1s tolerance absorbs
 /// filesystems that truncate mtime to whole seconds, which could otherwise
@@ -386,7 +398,7 @@ fn detect_swallowed_agy_error(
         );
     } else if found.is_none() && scanned > 0 {
         eprintln!(
-            "[agy-acp] swallowed-error scan: {scanned} log(s) grew this turn but no known error signature matched; treating as a genuinely empty turn"
+            "[agy-acp] swallowed-error scan: {scanned} log(s) grew this turn but no known error signature matched"
         );
     }
     found
@@ -440,8 +452,16 @@ fn truncate_to_byte_boundary(s: &mut String, max: usize) {
 /// self-wraps them (`<msg>.: <msg>`); this returns the most specific terminal
 /// error, de-wrapped and byte-length-capped on a char boundary.
 fn extract_agy_error_message(content: &str) -> Option<String> {
-    // Most specific terminal error first.
-    const ANCHORS: [&str; 3] = ["agent executor error:", "model unreachable:", "RESOURCE_EXHAUSTED"];
+    // Most specific terminal error first. "failed to construct executor:" ranks
+    // below RESOURCE_EXHAUSTED because it is a downstream consequence that does
+    // not name the root cause (e.g. a quota 429 while fetching model config ends
+    // with "neither PlanModel nor RequestedModel specified").
+    const ANCHORS: [&str; 4] = [
+        "agent executor error:",
+        "model unreachable:",
+        "RESOURCE_EXHAUSTED",
+        "failed to construct executor:",
+    ];
     for anchor in ANCHORS {
         // The last matching line is the terminal failure (retries log the same anchor).
         if let Some(line) = content.lines().rev().find(|l| l.contains(anchor)) {
@@ -778,6 +798,24 @@ E0707 08:34:23.910604  84 log.go:398] agent executor error: model unreachable: R
     }
 
     #[test]
+    fn test_extract_agy_error_message_anchors_executor_construction_failure() {
+        let log = "E0724 13:04:44.825961 18796 log.go:398] failed to construct executor: neither PlanModel nor RequestedModel specified. You must specify a valid model.\n";
+        let msg = extract_agy_error_message(log).expect("should detect executor construction failure");
+        assert!(msg.starts_with("failed to construct executor:"), "got: {msg}");
+        assert!(msg.contains("neither PlanModel nor RequestedModel specified"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_extract_agy_error_message_prefers_quota_cause_over_executor_construction() {
+        // When both appear in one turn (a 429 while fetching model config makes
+        // executor construction fail downstream), the root cause must win.
+        let log = "E0724 13:04:43.248134 18796 log.go:398] RESOURCE_EXHAUSTED (code 429): Resource has been exhausted (e.g. check quota).\n\
+                   E0724 13:04:44.825961 18796 log.go:398] failed to construct executor: neither PlanModel nor RequestedModel specified. You must specify a valid model.\n";
+        let msg = extract_agy_error_message(log).expect("should detect an error");
+        assert!(msg.starts_with("RESOURCE_EXHAUSTED"), "got: {msg}");
+    }
+
+    #[test]
     fn test_extract_agy_error_message_none_for_clean_log() {
         let clean = "I0707 08:34:15.727406  84 printmode.go:225] Print mode: silent auth succeeded\n\
                      I0707 08:34:15.871543  84 server.go:825] Created conversation abc\n";
@@ -1045,6 +1083,30 @@ E0707 08:34:23.910604  84 log.go:398] agent executor error: model unreachable: R
         let (code, msg) = decide_turn_error(false, false, false, "exit status: 1", "", None).unwrap();
         assert_eq!(code, -32000);
         assert!(msg.contains("exit status: 1"));
+    }
+
+    #[test]
+    fn test_decide_turn_error_nonzero_exit_appends_log_detail_to_stderr() {
+        let (code, msg) = decide_turn_error(
+            false,
+            false,
+            false,
+            "exit status: 1",
+            "Error: Agent execution terminated due to error.",
+            Some("RESOURCE_EXHAUSTED (code 429): Resource has been exhausted (e.g. check quota)."),
+        )
+        .unwrap();
+        assert_eq!(code, -32000);
+        assert!(msg.contains("Agent execution terminated due to error."), "got: {msg}");
+        assert!(msg.contains("(cause: RESOURCE_EXHAUSTED (code 429)"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_decide_turn_error_nonzero_exit_appends_log_detail_to_status_when_stderr_empty() {
+        let (code, msg) = decide_turn_error(false, false, false, "exit status: 1", "", Some("quota exhausted")).unwrap();
+        assert_eq!(code, -32000);
+        assert!(msg.contains("exit status: 1"), "got: {msg}");
+        assert!(msg.contains("(cause: quota exhausted)"), "got: {msg}");
     }
 
     #[test]
