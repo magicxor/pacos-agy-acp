@@ -97,11 +97,13 @@ public static class StringExtensions
     /// </summary>
     /// <param name="text">source string</param>
     /// <param name="prefix">prefix to look for</param>
-    /// <returns>True if the string starts with the prefix treated as a whole word, false otherwise.</returns>
+    /// <returns>True if the string starts with the prefix treated as a whole word, false otherwise (an empty prefix never matches).</returns>
     [Pure]
     public static bool StartsWithWholeWord(this string? text, string prefix)
     {
-        if (text is null || !text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        if (text is null
+            || string.IsNullOrEmpty(prefix)
+            || !text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
