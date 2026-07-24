@@ -159,6 +159,37 @@ internal sealed class StringExtensionsTests
     }
 
     [Test]
+    public void StartsWithWholeWord_WhenNull_ShouldReturnFalse()
+    {
+        const string? source = null;
+        Assert.That(source.StartsWithWholeWord("пакос"), Is.False);
+    }
+
+    [TestCase("пакос", "пакос", true)]
+    [TestCase("пакос, объясни мне", "пакос", true)]
+    [TestCase("пакос объясни мне", "пакос", true)]
+    [TestCase("пакос!!! объясни мне", "пакос", true)]
+    [TestCase("Пакос: привет", "пакос", true)]
+    [TestCase("ПАКОС\nновая строка", "пакос", true)]
+    [TestCase("пакосу нужен рефакторинг", "пакос", false)]
+    [TestCase("пакоса выключили", "пакос", false)]
+    [TestCase("пако", "пакос", false)]
+    [TestCase("", "пакос", false)]
+    [TestCase("", "", false)]
+    [TestCase("пакос", "", false)]
+    [TestCase("!drawx пчёлка", "", false)]
+    [TestCase("не пакос", "пакос", false)]
+    [TestCase("!drawx пчёлка", "!drawx", true)]
+    [TestCase("!DRAWX пчёлка", "!drawx", true)]
+    [TestCase("!drawx", "!drawx", true)]
+    [TestCase("!drawx2 пчёлка", "!drawx", true)]
+    [TestCase("!drawxxxmaxx пчёлка", "!drawx", false)]
+    public void StartsWithWholeWord_ShouldReturnExpectedResult(string source, string prefix, bool expected)
+    {
+        Assert.That(source.StartsWithWholeWord(prefix), Is.EqualTo(expected));
+    }
+
+    [Test]
     public void LongestRunOf_WhenNull_ShouldReturnZero()
     {
         const string? source = null;

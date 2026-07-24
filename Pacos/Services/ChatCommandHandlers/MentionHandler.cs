@@ -7,6 +7,7 @@ using Pacos.Services.GenerativeAi;
 using Pacos.Services.Markdown;
 using Pacos.Services.VideoConversion;
 using Polly;
+using Polly.Contrib.WaitAndRetry;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -74,13 +75,28 @@ public sealed class MentionHandler
         string messageText,
         IReadOnlyList<ChatInputFile> attachments)
     {
+        // Exponential backoff with jitter instead of a near-instant retry: during an
+        // upstream quota storm (HTTP 429) every failed turn tears down the agy-acp
+        // session, so an immediate retry spawns a fresh process whose own burst of
+        // startup API calls only amplifies the throttling.
+        var sleepDurations = Backoff.DecorrelatedJitterBackoffV2(
+            medianFirstRetryDelay: TimeSpan.FromSeconds(5),
+            retryCount: 3);
+
         var retryPolicy = Policy
             .Handle<TimeoutException>()
             .Or<AcpException>()
             .Or<HttpRequestException>()
             .Or<IOException>()
             .OrResult<ChatResponseInfo>(x => string.IsNullOrWhiteSpace(x.Text) && x.Files.Count == 0)
-            .WaitAndRetryAsync(retryCount: 1, retryNumber => TimeSpan.FromMilliseconds(retryNumber * 200));
+            .WaitAndRetryAsync(
+                sleepDurations,
+                (outcome, delay, retryNumber, _) => _logger.LogWarning(
+                    outcome.Exception,
+                    "Chat response attempt {RetryNumber} failed for chat {ChatId}; retrying in {Delay}",
+                    retryNumber,
+                    chatId,
+                    delay));
 
         return await retryPolicy.ExecuteAsync(() => _chatService.GetResponseAsync(
             chatId,

@@ -67,6 +67,8 @@ jobs:
             export PACOS__ALLOWEDCHATIDS__8='${{ vars.PACOS__ALLOWEDCHATIDS__8 }}'
             export PACOS__ALLOWEDCHATIDS__9='${{ vars.PACOS__ALLOWEDCHATIDS__9 }}'
             export PACOS__CHATMODEL='${{ vars.PACOS__CHATMODEL }}'
+            # Optional; empty disables the quota-error fallback.
+            export PACOS__FALLBACKCHATMODEL='${{ vars.PACOS__FALLBACKCHATMODEL }}'
             # Shared bearer token for the crawl4ai sidecar. docker-compose.deploy.yml interpolates
             # it into both the crawl4ai service (CRAWL4AI_API_TOKEN) and the pacos service
             # (Pacos__Crawl4AiApiToken), so the sidecar binds 0.0.0.0 and the MCP authenticates.

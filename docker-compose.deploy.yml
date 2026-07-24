@@ -28,6 +28,9 @@ services:
       - Pacos__AllowedChatIds__8=${PACOS__ALLOWEDCHATIDS__8}
       - Pacos__AllowedChatIds__9=${PACOS__ALLOWEDCHATIDS__9}
       - Pacos__ChatModel=${PACOS__CHATMODEL}
+      # Optional model retried once when the primary model fails with a quota error
+      # (HTTP 429 / RESOURCE_EXHAUSTED); pick one from a different quota pool.
+      - Pacos__FallbackChatModel=${PACOS__FALLBACKCHATMODEL}
       # Shared crawl4ai bearer token (same value as the crawl4ai service's CRAWL4AI_API_TOKEN),
       # forwarded to the Crawl4AiMcp server so it can authenticate against the sidecar.
       - Pacos__Crawl4AiApiToken=${CRAWL4AI_API_TOKEN}
