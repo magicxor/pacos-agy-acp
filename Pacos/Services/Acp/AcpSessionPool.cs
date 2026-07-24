@@ -20,6 +20,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
     private readonly string _root;
     private readonly TimeSpan _promptTimeout;
     private readonly IReadOnlyDictionary<string, string?> _environment;
+    private readonly string? _fallbackModel;
 
     private readonly ConcurrentDictionary<long, ChatSession> _sessions = new();
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _locks = new();
@@ -34,6 +35,23 @@ public sealed class AcpSessionPool : IAsyncDisposable
         _promptTimeout = TimeSpan.FromSeconds(value.PromptTimeoutSeconds);
         _root = ResolveRoot(value);
         _environment = BuildEnvironment(value);
+        _fallbackModel = ResolveFallbackModel(value);
+    }
+
+    /// <summary>
+    /// A fallback equal to the primary model would only repeat the same doomed
+    /// call against the same quota pool, so it is treated as "not configured".
+    /// </summary>
+    private static string? ResolveFallbackModel(PacosOptions options)
+    {
+        var fallback = options.FallbackChatModel;
+        if (string.IsNullOrWhiteSpace(fallback)
+            || string.Equals(fallback, options.ChatModel, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return fallback;
     }
 
     /// <summary>
@@ -68,7 +86,9 @@ public sealed class AcpSessionPool : IAsyncDisposable
     /// <summary>
     /// Sends a prompt for the given chat, creating or reusing its dedicated
     /// agy-acp session. On timeout or protocol error the session is torn down so
-    /// the next prompt starts a fresh process.
+    /// the next prompt starts a fresh process. A quota failure (HTTP 429 /
+    /// RESOURCE_EXHAUSTED) on the primary model is retried once on the configured
+    /// fallback model, which is billed against a separate quota pool.
     /// </summary>
     public async Task<string> PromptAsync(long chatId, string promptText, CancellationToken cancellationToken)
     {
@@ -76,7 +96,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
         await gate.WaitAsync(cancellationToken);
         try
         {
-            var session = await EnsureSessionAsync(chatId, cancellationToken);
+            var session = await EnsureSessionAsync(chatId, modelOverride: null, cancellationToken);
             try
             {
                 return await session.Connection.PromptAsync(
@@ -84,6 +104,12 @@ public sealed class AcpSessionPool : IAsyncDisposable
                     promptText,
                     _promptTimeout,
                     cancellationToken);
+            }
+            catch (AcpException e) when (_fallbackModel is not null && session.ModelOverride is null && e.IsQuotaError)
+            {
+                _logger.LogWarning(e, "agy-acp prompt failed for chat {ChatId}; tearing down session", chatId);
+                await RemoveSessionAsync(chatId);
+                return await PromptWithFallbackModelAsync(chatId, promptText, cancellationToken);
             }
             catch (Exception e) when (e is TimeoutException or AcpException)
             {
@@ -95,6 +121,36 @@ public sealed class AcpSessionPool : IAsyncDisposable
         finally
         {
             gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Retries a quota-failed prompt once on the fallback model. On success the
+    /// fallback session stays active for the chat (preserving the conversation
+    /// context of follow-up turns) until it is next torn down, after which the
+    /// chat returns to the primary model.
+    /// </summary>
+    private async Task<string> PromptWithFallbackModelAsync(long chatId, string promptText, CancellationToken cancellationToken)
+    {
+        _logger.LogWarning(
+            "Quota exhausted for chat {ChatId}; retrying once with fallback model {FallbackModel}",
+            chatId,
+            _fallbackModel);
+
+        var session = await EnsureSessionAsync(chatId, _fallbackModel, cancellationToken);
+        try
+        {
+            return await session.Connection.PromptAsync(
+                session.SessionId,
+                promptText,
+                _promptTimeout,
+                cancellationToken);
+        }
+        catch (Exception e) when (e is TimeoutException or AcpException)
+        {
+            _logger.LogWarning(e, "Fallback-model prompt failed for chat {ChatId}; tearing down session", chatId);
+            await RemoveSessionAsync(chatId);
+            throw;
         }
     }
 
@@ -116,7 +172,13 @@ public sealed class AcpSessionPool : IAsyncDisposable
         }
     }
 
-    private async Task<ChatSession> EnsureSessionAsync(long chatId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Returns the chat's live session or creates a new one. The model override
+    /// applies only when a new session is created (an existing alive session is
+    /// returned as-is), so callers that need a specific model must tear the old
+    /// session down first.
+    /// </summary>
+    private async Task<ChatSession> EnsureSessionAsync(long chatId, string? modelOverride, CancellationToken cancellationToken)
     {
         if (_sessions.TryGetValue(chatId, out var existing))
         {
@@ -138,9 +200,18 @@ public sealed class AcpSessionPool : IAsyncDisposable
             await connection.InitializeAsync(cancellationToken);
             var sessionId = await connection.NewSessionAsync(workingDir, cancellationToken);
 
-            var session = new ChatSession(connection, sessionId);
+            if (modelOverride is not null)
+            {
+                await connection.SetConfigOptionAsync(sessionId, "model", modelOverride, cancellationToken);
+            }
+
+            var session = new ChatSession(connection, sessionId, modelOverride);
             _sessions[chatId] = session;
-            _logger.LogInformation("Created agy-acp session {SessionId} for chat {ChatId}", sessionId, chatId);
+            _logger.LogInformation(
+                "Created agy-acp session {SessionId} for chat {ChatId} (model: {Model})",
+                sessionId,
+                chatId,
+                modelOverride ?? "default");
             return session;
         }
         catch
@@ -210,5 +281,5 @@ public sealed class AcpSessionPool : IAsyncDisposable
         _locks.Clear();
     }
 
-    private sealed record ChatSession(AcpConnection Connection, string SessionId);
+    private sealed record ChatSession(AcpConnection Connection, string SessionId, string? ModelOverride);
 }

@@ -116,6 +116,24 @@ public sealed class AcpConnection : IAsyncDisposable
     }
 
     /// <summary>
+    /// Sets a session configuration option, e.g. the model the session runs on.
+    /// agy-acp stores the value in its session state and passes it to every
+    /// subsequent <c>agy</c> invocation (for <c>model</c> as <c>--model</c>).
+    /// </summary>
+    public async Task SetConfigOptionAsync(
+        string sessionId,
+        string configId,
+        string value,
+        CancellationToken cancellationToken)
+    {
+        await SendRequestAsync(
+            "session/setConfigOption",
+            new { sessionId, configId, value },
+            HandshakeTimeout,
+            cancellationToken);
+    }
+
+    /// <summary>
     /// Sends a single user prompt and returns the agent's full text response.
     /// </summary>
     public async Task<string> PromptAsync(

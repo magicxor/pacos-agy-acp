@@ -41,6 +41,7 @@ The bot reads its settings from environment variables or an `appsettings.json` f
 
 **Optional:**
 
+- `FallbackChatModel`: Model retried once when the primary model fails with a quota error (HTTP 429 / RESOURCE_EXHAUSTED). Pick one billed against a different quota pool than `ChatModel` (e.g. `Claude Sonnet 4.6 (Thinking)` when the primary is a Gemini model); the value must exactly match a label from `agy models`. Empty disables the fallback.
 - `AgyAcpCommand`: Executable used to spawn the agy-acp adapter (default: `agy-acp`).
 - `AgyAcpArgs`: Extra command-line arguments passed to the agy-acp process.
 - `WorkingDirectoryRoot`: Root directory under which per-chat working directories are created (default: a folder under the system temp directory).
