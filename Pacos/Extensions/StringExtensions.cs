@@ -92,6 +92,25 @@ public static class StringExtensions
     }
 
     /// <summary>
+    /// Checks whether the string starts with the specified prefix (ordinal, ignoring case)
+    /// and the prefix is followed by a non-letter character or the end of the string.
+    /// </summary>
+    /// <param name="text">source string</param>
+    /// <param name="prefix">prefix to look for</param>
+    /// <returns>True if the string starts with the prefix treated as a whole word, false otherwise.</returns>
+    [Pure]
+    public static bool StartsWithWholeWord(this string? text, string prefix)
+    {
+        if (text is null || !text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return text.Length == prefix.Length
+               || !char.IsLetter(text[prefix.Length]);
+    }
+
+    /// <summary>
     /// Returns the length of the longest run of consecutive occurrences of the specified character.
     /// </summary>
     /// <param name="text">source string</param>
