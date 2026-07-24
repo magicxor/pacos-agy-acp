@@ -23,6 +23,19 @@ public sealed class PacosOptions
     public required string ChatModel { get; set; }
 
     /// <summary>
+    /// Optional model to retry a prompt on when the primary <see cref="ChatModel"/>
+    /// fails with a quota/rate-limit error (HTTP 429 / RESOURCE_EXHAUSTED). Pick a
+    /// model billed against a different quota pool than the primary one (e.g. a
+    /// Claude or GPT model when the primary is Gemini); the value must exactly
+    /// match a label from <c>agy models</c>, e.g. <c>Claude Sonnet 4.6 (Thinking)</c>.
+    /// After a successful fallback turn the chat keeps its fallback session (and
+    /// conversation context) until the session is next torn down — by an error, a
+    /// reset command or a restart — after which the next session starts on the
+    /// primary model again. Empty disables the fallback.
+    /// </summary>
+    public string? FallbackChatModel { get; set; }
+
+    /// <summary>
     /// Executable used to spawn the agy-acp ACP adapter process.
     /// </summary>
     public string AgyAcpCommand { get; set; } = "agy-acp";

@@ -15,4 +15,15 @@ public sealed class AcpException : Exception
         : base(message, innerException)
     {
     }
+
+    /// <summary>
+    /// True when the reported error looks like an upstream quota/rate-limit
+    /// rejection (HTTP 429 / RESOURCE_EXHAUSTED), as surfaced by the agy-acp
+    /// adapter from agy's stderr or its cli.log. Drives the decision to retry
+    /// the prompt on a fallback model served from a separate quota pool.
+    /// </summary>
+    public bool IsQuotaError =>
+        Message.Contains("RESOURCE_EXHAUSTED", StringComparison.Ordinal)
+        || Message.Contains("code 429", StringComparison.OrdinalIgnoreCase)
+        || Message.Contains("quota", StringComparison.OrdinalIgnoreCase);
 }
