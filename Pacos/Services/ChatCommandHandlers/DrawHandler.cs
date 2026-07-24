@@ -37,12 +37,6 @@ public sealed class DrawHandler
         var prompt = messageText.Substring(Const.DrawCommand.Length).Trim();
         _logger.LogInformation("Processing {Command} command from {Author} with prompt: {Prompt}", Const.DrawCommand, author, prompt);
 
-        // Locate optional source images: the user's own message and the post it replies to.
-        var userImageMetadata = GetImageMetadata(updateMessage);
-        var repliedImageMetadata = updateMessage.ReplyToMessage is not null
-            ? GetImageMetadata(updateMessage.ReplyToMessage)
-            : null;
-
         // A bare command replying to a message is a request to visualize that message,
         // so its text counts as a prompt source too.
         var repliedToMessageText = (updateMessage.ReplyToMessage?.Text
@@ -51,10 +45,8 @@ public sealed class DrawHandler
                                     ?? string.Empty)
             .Trim();
 
-        if (string.IsNullOrWhiteSpace(prompt)
-            && repliedToMessageText.Length == 0
-            && userImageMetadata is null
-            && repliedImageMetadata is null)
+        // Images alone are not enough: without any text it is unclear what to generate.
+        if (string.IsNullOrWhiteSpace(prompt) && repliedToMessageText.Length == 0)
         {
             await botClient.SendMessage(
                 chatId: updateMessage.Chat.Id,
@@ -63,6 +55,12 @@ public sealed class DrawHandler
                 cancellationToken: cancellationToken);
             return;
         }
+
+        // Locate optional source images: the user's own message and the post it replies to.
+        var userImageMetadata = GetImageMetadata(updateMessage);
+        var repliedImageMetadata = updateMessage.ReplyToMessage is not null
+            ? GetImageMetadata(updateMessage.ReplyToMessage)
+            : null;
 
         // Download both images best-effort; a single failed download must not block generation.
         var attachments = new List<ChatInputFile>();
