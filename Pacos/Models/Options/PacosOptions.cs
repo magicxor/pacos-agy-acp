@@ -88,6 +88,17 @@ public sealed class PacosOptions
     public int PromptTimeoutSeconds { get; set; } = 300;
 
     /// <summary>
+    /// When a chat has been idle (no prompt to the agent) for longer than this
+    /// many minutes, the next prompt starts a fresh session — exactly as if the
+    /// reset command had been issued — instead of resuming the old conversation.
+    /// Resuming replays the whole conversation history to the model on every
+    /// turn, so dropping context that has gone stale saves tokens. <c>0</c>
+    /// disables the idle reset.
+    /// </summary>
+    [Range(0, 10080)]
+    public int SessionIdleTimeoutMinutes { get; set; } = 180;
+
+    /// <summary>
     /// MCP servers agy should load, keyed by server name. Written to
     /// <c>~/.gemini/config/mcp_config.json</c> on startup by
     /// <see cref="Services.Acp.AgyMcpConfigHostedService"/>; the security policy

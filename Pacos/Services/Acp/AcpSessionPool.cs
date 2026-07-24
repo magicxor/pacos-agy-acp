@@ -15,24 +15,29 @@ namespace Pacos.Services.Acp;
 public sealed class AcpSessionPool : IAsyncDisposable
 {
     private readonly ILogger<AcpSessionPool> _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly string _command;
     private readonly IReadOnlyList<string> _args;
     private readonly string _root;
     private readonly TimeSpan _promptTimeout;
+    private readonly TimeSpan _idleTimeout;
     private readonly IReadOnlyDictionary<string, string?> _environment;
     private readonly string? _fallbackModel;
 
     private readonly ConcurrentDictionary<long, ChatSession> _sessions = new();
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _locks = new();
+    private readonly ConcurrentDictionary<long, DateTimeOffset> _lastPromptAt = new();
 
-    public AcpSessionPool(ILogger<AcpSessionPool> logger, IOptions<PacosOptions> options)
+    public AcpSessionPool(ILogger<AcpSessionPool> logger, IOptions<PacosOptions> options, TimeProvider timeProvider)
     {
         _logger = logger;
+        _timeProvider = timeProvider;
 
         var value = options.Value;
         _command = value.AgyAcpCommand;
         _args = value.AgyAcpArgs;
         _promptTimeout = TimeSpan.FromSeconds(value.PromptTimeoutSeconds);
+        _idleTimeout = TimeSpan.FromMinutes(value.SessionIdleTimeoutMinutes);
         _root = ResolveRoot(value);
         _environment = BuildEnvironment(value);
         _fallbackModel = ResolveFallbackModel(value);
@@ -96,6 +101,8 @@ public sealed class AcpSessionPool : IAsyncDisposable
         await gate.WaitAsync(cancellationToken);
         try
         {
+            await ResetSessionIfIdleAsync(chatId);
+
             var session = await EnsureSessionAsync(chatId, modelOverride: null, cancellationToken);
             try
             {
@@ -152,6 +159,44 @@ public sealed class AcpSessionPool : IAsyncDisposable
             await RemoveSessionAsync(chatId);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Tears down the chat's session when it has been idle past the configured
+    /// timeout, so the next prompt starts a fresh conversation (exactly as the
+    /// reset command would) instead of resuming — and paying the tokens for — a
+    /// long-stale context. Also stamps the chat's last-prompt time. Must be
+    /// called while holding the chat's gate.
+    /// </summary>
+    private async Task ResetSessionIfIdleAsync(long chatId)
+    {
+        var now = _timeProvider.GetUtcNow();
+        DateTimeOffset? lastPromptAt = _lastPromptAt.TryGetValue(chatId, out var last) ? last : null;
+        _lastPromptAt[chatId] = now;
+
+        if (!IsIdleTimeoutExpired(lastPromptAt, now, _idleTimeout) || !_sessions.ContainsKey(chatId))
+        {
+            return;
+        }
+
+        _logger.LogInformation(
+            "Chat {ChatId} has been idle since {LastPromptAt:u} (timeout {IdleTimeout}); starting a fresh session",
+            chatId,
+            lastPromptAt,
+            _idleTimeout);
+        await RemoveSessionAsync(chatId);
+    }
+
+    /// <summary>
+    /// True when the previous activity is older than the idle timeout. A
+    /// non-positive timeout disables the check, and a chat with no recorded
+    /// activity (first prompt since startup) is never considered idle.
+    /// </summary>
+    public static bool IsIdleTimeoutExpired(DateTimeOffset? lastActivityAt, DateTimeOffset now, TimeSpan idleTimeout)
+    {
+        return idleTimeout > TimeSpan.Zero
+               && lastActivityAt is not null
+               && now - lastActivityAt.Value > idleTimeout;
     }
 
     /// <summary>
