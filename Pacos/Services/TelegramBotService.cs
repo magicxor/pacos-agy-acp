@@ -83,9 +83,9 @@ public sealed class TelegramBotService
                                ?? update.Message.Caption
                                ?? update.Message.RichMessage.GetPlainText())
                     .Trim();
-                var currentMention = Const.Mentions.FirstOrDefault(mention => message.StartsWith(mention, StringComparison.OrdinalIgnoreCase));
+                var currentMention = Const.Mentions.FirstOrDefault(mention => message.StartsWithWholeWord(mention));
 
-                if (message.StartsWith(Const.DrawCommand, StringComparison.OrdinalIgnoreCase))
+                if (message.StartsWithWholeWord(Const.DrawCommand))
                 {
                     await _drawHandler.HandleDrawAsync(botClient, update.Message, message, author, cancellationToken);
                 }
