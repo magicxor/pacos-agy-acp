@@ -181,6 +181,24 @@ public sealed class PacosOptions
                 ["Crawl4Ai__AllowedOutputPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$",
             },
         },
+        ["quickchart"] = new McpServer
+        {
+            Command = "dotnet",
+            Args = ["/opt/quickchart-mcp/QuickChartMcp.dll"],
+            Env = new Dictionary<string, string?>
+            {
+                // QuickChart rendering backend, reachable only on the internal compose network.
+                // Self-hosted QuickChart requires no API key, so unlike crawl4ai there is no
+                // token placeholder to substitute.
+                ["QuickChart__BaseUrl"] = "http://quickchart:3400",
+                // Same rationale as crawl4ai above: the Dockerfile empties AllowedOutputPatterns
+                // in the server's appsettings.json at image build time, so this single index-0
+                // override fully defines the allow-list (an empty list is deny-all). Writes are
+                // constrained to the per-turn output/temp dirs via the regex-escaped
+                // {workspaceRootPattern}.
+                ["QuickChart__AllowedOutputPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$",
+            },
+        },
     };
 #pragma warning restore S5332
 
