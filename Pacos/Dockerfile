@@ -94,6 +94,22 @@ RUN mkdir -p /opt/crawl4ai-mcp && \
     jq '.Crawl4Ai.AllowedOutputPatterns = []' /opt/crawl4ai-mcp/appsettings.json > /opt/crawl4ai-mcp/appsettings.json.tmp && \
     mv /opt/crawl4ai-mcp/appsettings.json.tmp /opt/crawl4ai-mcp/appsettings.json
 
+# Install the QuickChartMcp MCP server (https://github.com/magicxor/QuickChartMcp), pinned to a
+# released version. The framework-dependent build is arch-neutral IL; agy spawns it as
+# `dotnet /opt/quickchart-mcp/QuickChartMcp.dll` according to the mcp_config.json written at
+# startup by AgyMcpConfigHostedService. It is a local stdio server that renders Chart.js configs
+# via the QuickChart backend (the quickchart sidecar container on the compose network,
+# http://quickchart:3400). Empty the output-dir allow-list in the shipped appsettings.json so the
+# baked-in baseline allows nothing (QuickChartMcp treats an empty pattern list as deny-all) and
+# the env override written by AgyMcpConfigHostedService fully defines it. Fail-closed: if the
+# override ever goes missing every write is blocked.
+ENV QUICKCHART_MCP_VERSION=0.0.1
+RUN mkdir -p /opt/quickchart-mcp && \
+    curl -fsSL "https://github.com/magicxor/QuickChartMcp/releases/download/${QUICKCHART_MCP_VERSION}/QuickChartMcp-${QUICKCHART_MCP_VERSION}.tar.gz" \
+      | tar -xz -C /opt/quickchart-mcp && \
+    jq '.QuickChart.AllowedOutputPatterns = []' /opt/quickchart-mcp/appsettings.json > /opt/quickchart-mcp/appsettings.json.tmp && \
+    mv /opt/quickchart-mcp/appsettings.json.tmp /opt/quickchart-mcp/appsettings.json
+
 # Pin the agy CLI to the installed version; never let it self-update at runtime.
 ENV AGY_CLI_DISABLE_AUTO_UPDATE=true
 

@@ -66,6 +66,15 @@ public static class Const
                                                     - Результат сохраняется в директорию из параметра outputDirectory: если файл нужно отдать пользователю — указывай выходную директорию, если он нужен только тебе для ответа — временную (пути бери из меток [SYSTEM: ...]).
                                                     """;
 
+    public const string QuickChartRuleSystemPrompt = """
+                                                    # ГРАФИКИ И ДИАГРАММЫ (MCP quickchart)
+                                                    - Чтобы построить график или диаграмму (bar, line, pie, doughnut, radar, scatter и т.д.), используй MCP-инструмент create_chart сервера quickchart.
+                                                    - Параметр chart — конфигурация Chart.js, переданная строкой (обычный JSON или JS-синтаксис с функциями). Опциональные параметры: width, height, backgroundColor, format (png по умолчанию; svg, webp, jpg, pdf), version (версия Chart.js: 2, 3 или 4).
+                                                    - Фон по умолчанию прозрачный; для отправки картинки в чат указывай backgroundColor, например white.
+                                                    - Результат сохраняется в директорию из параметра outputDirectory: если график нужно отдать пользователю — указывай выходную директорию (файлы из неё отправятся в чат автоматически), если он нужен только тебе — временную (пути бери из меток [SYSTEM: ...]).
+                                                    - Если инструмент вернул ошибку, покажи пользователю её текст.
+                                                    """;
+
     // Placeholder usable in MCP server env values (PacosOptions.McpServers); replaced
     // at startup with the resolved workspace root by AgyMcpConfigHostedService.
     public const string WorkspaceRootPlaceholder = "{workspaceRoot}";
