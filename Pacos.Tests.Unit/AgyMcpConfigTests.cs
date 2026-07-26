@@ -23,6 +23,8 @@ internal sealed class AgyMcpConfigTests
 
     private static readonly string[] ExpectedCrawl4AiArgs = ["/opt/crawl4ai-mcp/Crawl4AiMcp.dll"];
 
+    private static readonly string[] ExpectedQuickChartArgs = ["/opt/quickchart-mcp/QuickChartMcp.dll"];
+
     private static PacosOptions CreateOptions() => new()
     {
         TelegramBotApiKey = "123:abc",
@@ -150,6 +152,47 @@ internal sealed class AgyMcpConfigTests
             Assert.That(crawl4ai.ContainsKey("headers"), Is.False);
             Assert.That(crawl4ai.ContainsKey("envFile"), Is.False);
             Assert.That(crawl4ai.ContainsKey("url"), Is.False);
+        });
+    }
+
+    [Test]
+    public void BuildConfigJson_DefaultQuickChartServer_MatchesAgyOnDiskFormat()
+    {
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir, ApiToken);
+        var quickchart = GetServer(json, "quickchart");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(quickchart["command"]?.GetValue<string>(), Is.EqualTo("dotnet"));
+            Assert.That(
+                quickchart["args"]?.AsArray().Select(node => node?.GetValue<string>()),
+                Is.EqualTo(ExpectedQuickChartArgs));
+
+            // Backend URL points at the quickchart sidecar on the internal compose network.
+            Assert.That(
+                quickchart["env"]?["QuickChart__BaseUrl"]?.GetValue<string>(),
+                Is.EqualTo("http://quickchart:3400"));
+
+            // Self-hosted QuickChart requires no API key, so no key override may appear.
+            Assert.That(
+                quickchart["env"]?.AsObject().ContainsKey("QuickChart__ApiKey"),
+                Is.False);
+
+            // Writes are constrained to the per-turn output/temp dirs; the baked appsettings.json
+            // empties the array so a single index-0 override fully defines the allow-list (no index 1).
+            Assert.That(
+                quickchart["env"]?["QuickChart__AllowedOutputPatterns__0"]?.GetValue<string>(),
+                Is.EqualTo($"^{WorkspaceRoot}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$"));
+            Assert.That(
+                quickchart["env"]?.AsObject().ContainsKey("QuickChart__AllowedOutputPatterns__1"),
+                Is.False);
+
+            // agy's own on-disk format for stdio entries is bare command/args/env:
+            // no "type", "headers", "envFile" or "url" members may appear.
+            Assert.That(quickchart.ContainsKey("type"), Is.False);
+            Assert.That(quickchart.ContainsKey("headers"), Is.False);
+            Assert.That(quickchart.ContainsKey("envFile"), Is.False);
+            Assert.That(quickchart.ContainsKey("url"), Is.False);
         });
     }
 

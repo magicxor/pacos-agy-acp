@@ -12,13 +12,20 @@ services:
     depends_on:
       - gallerydl-webapi
       - crawl4ai
+      - quickchart
 
   # gallery-dl backend for the GalleryDl MCP server (spawned by agy inside the
   # pacos container). Same wiring as production: http://gallerydl-webapi:8080.
   gallerydl-webapi:
     image: ghcr.io/magicxor/gallerydl-webapi:0.3.1
 
-  # Crawl4AI backend for the (future) custom MCP server (spawned by agy inside
+  # QuickChart chart-rendering backend, used by the bot from inside the pacos
+  # container. Same wiring as production: http://quickchart:3400. The magicxor
+  # fork (Chart.js 4 + built-in geo maps), not the upstream ianw image.
+  quickchart:
+    image: ghcr.io/magicxor/quickchart:2.0.0
+
+  # Crawl4AI backend for the custom MCP server (spawned by agy inside
   # the pacos container). Same wiring as production: http://crawl4ai:11235.
   crawl4ai:
     image: unclecode/crawl4ai:0.9.2
