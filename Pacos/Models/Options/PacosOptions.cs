@@ -48,9 +48,9 @@ public sealed class PacosOptions
     /// <summary>
     /// Root directory under which per-chat working directories are created.
     /// Each chat gets its own subdirectory (named after the chat id) that becomes
-    /// the agy working directory and holds its steering file (GEMINI.md) and
-    /// per-turn temporary input/output folders. When empty, a folder under the
-    /// system temp directory is used.
+    /// the agy working directory and holds its steering file (AGENTS.md), its agent
+    /// skills (.agents/skills) and per-turn temporary input/output folders. When
+    /// empty, a folder under the system temp directory is used.
     /// </summary>
     public string? WorkingDirectoryRoot { get; set; }
 

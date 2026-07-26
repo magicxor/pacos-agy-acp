@@ -11,7 +11,7 @@ Pacos is a .NET-based Telegram bot designed to interact in group chats. It drive
 
 ## Features
 
-- **AI-Powered Chat**: Responds to mentions (e.g., "pacos", "пакос") or direct messages by driving the agy agent over ACP. Each chat gets its own working directory and persona steering file (`GEMINI.md`).
+- **AI-Powered Chat**: Responds to mentions (e.g., "pacos", "пакос") or direct messages by driving the agy agent over ACP. Each chat gets its own working directory holding a persona steering file (`AGENTS.md`) and a set of agy Agent Skills (`.agents/skills/<skill>/SKILL.md`) that carry the tool-specific instructions and are loaded on demand instead of on every turn.
 - **Image Generation**: Generate or modify images via the `!drawx <prompt>` command. An optional source image can be supplied with the command or by replying to a message that contains one.
 - **File Delivery**: The agent can return generated files (images, documents, etc.) by moving them into a per-turn output directory via the filemcp MCP server, which the bot then forwards back to the user.
 - **Chat Management**:
