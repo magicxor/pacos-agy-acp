@@ -11,8 +11,9 @@ namespace Pacos.Services.GenerativeAi;
 /// agy discovers there and activates on demand from their frontmatter description.
 ///
 /// The steering file is written once (its trailing session-start stamp must not drift from
-/// turn to turn), while the skill files are rewritten on every provisioning so edits to
-/// <see cref="AgentSkills"/> also reach chats provisioned by an earlier release.
+/// turn to turn), while the skills are rewritten — and skills no longer listed in
+/// <see cref="AgentSkills"/> deleted — on every provisioning, so the catalog stays the single
+/// source of truth even in chats provisioned by an earlier release.
 /// </summary>
 public sealed class ChatWorkspaceProvisioner
 {
@@ -72,14 +73,51 @@ public sealed class ChatWorkspaceProvisioner
 
     private void WriteSkills(string workingDirectory)
     {
+        var skillsDirectory = Directory
+            .CreateDirectory(Path.Combine(workingDirectory, SkillsRootDirectoryName, SkillsDirectoryName))
+            .FullName;
+
         foreach (var skill in AgentSkills.All)
         {
-            var skillDirectory = Path.Combine(workingDirectory, SkillsRootDirectoryName, SkillsDirectoryName, skill.FolderName);
+            var skillDirectory = Path.Combine(skillsDirectory, skill.FolderName);
             Directory.CreateDirectory(skillDirectory);
             File.WriteAllText(Path.Combine(skillDirectory, SkillFileName), BuildSkillContent(skill), Encoding.UTF8);
         }
 
+        RemoveStaleSkills(skillsDirectory);
+
         _logger.LogDebug("Provisioned {Count} agent skill(s) in {Path}", AgentSkills.All.Count, workingDirectory);
+    }
+
+    // agy discovers and activates every skill it finds on disk, so a skill dropped from or
+    // renamed in AgentSkills.All would live on in chats provisioned by an earlier release.
+    private void RemoveStaleSkills(string skillsDirectory)
+    {
+        var provisionedFolderNames = AgentSkills.All
+            .Select(static skill => skill.FolderName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var directory in Directory.EnumerateDirectories(skillsDirectory))
+        {
+            if (provisionedFolderNames.Contains(Path.GetFileName(directory)))
+            {
+                continue;
+            }
+
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+                _logger.LogInformation("Removed stale agent skill at {Path}", directory);
+            }
+            catch (IOException e)
+            {
+                _logger.LogWarning(e, "Failed to remove stale agent skill at {Path}", directory);
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                _logger.LogWarning(e, "Failed to remove stale agent skill at {Path}", directory);
+            }
+        }
     }
 
     private void WriteSteeringFile(string workingDirectory, bool isGroupChat)
