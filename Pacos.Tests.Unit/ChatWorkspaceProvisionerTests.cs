@@ -16,7 +16,7 @@ internal sealed class ChatWorkspaceProvisionerTests
     [OneTimeSetUp]
     public void OneTimeSetUp()
     {
-        VerifySettings.DisableDiff();
+        // VerifySettings.DisableDiff();
     }
 
     [SetUp]
@@ -114,6 +114,29 @@ internal sealed class ChatWorkspaceProvisionerTests
     }
 
     [Test]
+    public void Provision_WhenSkillWasRemovedFromCatalog_ShouldDeleteItsDirectory()
+    {
+        var provisioner = CreateProvisioner();
+        provisioner.Provision(_workingDirectory, isGroupChat: false);
+
+        var staleDirectory = SkillDirectoryPath("retired-skill");
+        Directory.CreateDirectory(staleDirectory);
+        File.WriteAllText(Path.Combine(staleDirectory, "SKILL.md"), "skill from an earlier release");
+
+        provisioner.Provision(_workingDirectory, isGroupChat: false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(Directory.Exists(staleDirectory), Is.False);
+
+            foreach (var skill in AgentSkills.All)
+            {
+                Assert.That(File.Exists(SkillFilePath(skill.FolderName)), Is.True, skill.FolderName);
+            }
+        });
+    }
+
+    [Test]
     public async Task Provision_ShouldWriteExpectedSteeringFile()
     {
         CreateProvisioner().Provision(_workingDirectory, isGroupChat: true);
@@ -145,10 +168,18 @@ internal sealed class ChatWorkspaceProvisionerTests
 
     // The prompt text comes from raw string literals, so it carries the line endings of the
     // checked-out sources; normalize so the snapshots match on Windows and on Linux CI alike.
-    private static string Normalize(string content) => content.ReplaceLineEndings("\n");
+    // The example paths in the prompts are rooted at "/tmp/", which on Linux is also
+    // Path.GetTempPath(): Verify would scrub it to "{TempPath}" there and leave it alone on
+    // Windows, so apply that very replacement up front on every platform.
+    private static string Normalize(string content) => content
+        .ReplaceLineEndings("\n")
+        .Replace("/tmp/", "{TempPath}", StringComparison.Ordinal);
 
     private string SteeringFilePath() => Path.Combine(_workingDirectory, "AGENTS.md");
 
+    private string SkillDirectoryPath(string folderName) =>
+        Path.Combine(_workingDirectory, ".agents", "skills", folderName);
+
     private string SkillFilePath(string folderName) =>
-        Path.Combine(_workingDirectory, ".agents", "skills", folderName, "SKILL.md");
+        Path.Combine(SkillDirectoryPath(folderName), "SKILL.md");
 }
