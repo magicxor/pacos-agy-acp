@@ -75,54 +75,80 @@ public static class AgentSkills
                    - Проекцию (scales.projection) настраивать не нужно — сервер подставит её сам. Всё остальное — подложку, границы, цветовую шкалу и легенду — задавай явно по правилам ниже.
 
                    ## 1. Фон и невидимые страны
-                   Страны, которых нет в массиве data, физически не отрисовываются (остаются прозрачными). Чтобы они имели дефолтный цвет (например, серый), ОБЯЗАТЕЛЬНО задавай в настройках dataset свойство outlineBackgroundColor: '#e0e0e0' (светло-серый фон подложки всей карты). Без этого пустые страны сольются с цветом холста или покажутся голубыми из-за дефолтных настроек.
+                   Страны, которых нет в массиве data, физически не отрисовываются (остаются прозрачными). Чтобы они имели дефолтный цвет (например, серый), ОБЯЗАТЕЛЬНО задавай в настройках dataset свойство outlineBackgroundColor: "#e0e0e0" (светло-серый фон подложки всей карты). Без этого пустые страны сольются с цветом холста или покажутся голубыми из-за дефолтных настроек.
+                   Тем же цветом задавай scales.color.missing: "#e0e0e0" — это заливка для фич, которые в data есть, но без значения (по умолчанию прозрачная). Это отдельное свойство: outlineBackgroundColor красит подложку, missing — фичи без данных.
 
                    ## 2. Границы стран и материка
                    Чтобы страны не сливались в одно пятно, всегда задавай в dataset: borderColor: 'rgba(0,0,0,0.3)' и borderWidth: 1. Для красивой внешней границы всей карты используй outlineBorderColor: '#111' и outlineBorderWidth: 1.5.
 
                    ## 3. Цветовая шкала и данные (ВАЖНО!)
                    НИКОГДА не используй backgroundColor внутри объекта dataset — это сломает логику раскраски. Цвета задаются исключительно через объект шкалы options.scales.color.
-                   - Используй строковые названия палитр D3, например: interpolate: 'Oranges', 'Greens', 'Blues'. НЕ передавай туда JS-функции.
-                   - Обязательно указывай axis: 'x' в scales.color, иначе шкала выкинет ошибку.
+                   - Используй строковые названия палитр D3, например: interpolate: "Oranges", "Greens", "Blues". НЕ передавай туда JS-функции.
+                   - Обязательно указывай axis: "x" в scales.color, иначе шкала выкинет ошибку.
+                   - Указывай display: true, чтобы шкала и её легенда точно отрисовались.
 
                    ## 4. Настройка легенды
                    По умолчанию текст на цветовой шкале может быть бледным или обрезаться.
-                   - Чтобы текст был чётким, добавляй ticks: { color: 'black', font: { size: 14 } } внутрь scales.color.
-                   - Чтобы шкала не наезжала на страны (типа Новой Зеландии) и не обрезалась, используй вертикальное отображение слева: legend: { position: 'bottom-left', align: 'right', length: 200, width: 40 }.
+                   - Чтобы текст был чётким, добавляй ticks: { "color": "black", "font": { "size": 14 } } внутрь scales.color.
+                   - Чтобы шкала не наезжала на страны (типа Новой Зеландии) и не обрезалась, используй вертикальное отображение слева: legend: { "position": "bottom-left", "align": "right", "length": 200, "width": 40 }.
                    - Обязательно добавляй отступы по краям самого графика, чтобы легенда влезла, например: options.layout.padding = { left: 40, right: 40, bottom: 40 }.
 
                    ## 5. Подписи значений
                    Значения на карте читаются по цветовой шкале, поэтому плагин datalabels здесь только мешает (он подпишет каждую фичу). Отключай его: options.plugins.datalabels.display = false. Обычную легенду датасета тоже убирай: options.plugins.legend.display = false — цветовая шкала её заменяет.
 
                    ## Пример choropleth со всеми правилами
+                   Проверенный рабочий конфиг — бери его за основу и меняй только label, title и data. Передавай строгим JSON (двойные кавычки), проекцию не добавляй.
                    ```
                    {
-                     type: 'choropleth',
-                     data: {
-                       datasets: [{
-                         label: 'Население, млн',
-                         map: 'world',
-                         data: [{ feature: 'Germany', value: 83 }, { feature: 'France', value: 68 }],
-                         outlineBackgroundColor: '#e0e0e0',
-                         outlineBorderColor: '#111',
-                         outlineBorderWidth: 1.5,
-                         borderColor: 'rgba(0,0,0,0.3)',
-                         borderWidth: 1
-                       }]
+                     "type": "choropleth",
+                     "data": {
+                       "datasets": [
+                         {
+                           "label": "Экспорт титана",
+                           "map": "world",
+                           "borderColor": "rgba(0,0,0,0.3)",
+                           "borderWidth": 1,
+                           "outlineBorderColor": "#111",
+                           "outlineBorderWidth": 1.5,
+                           "outlineBackgroundColor": "#e0e0e0",
+                           "data": [
+                             { "feature": "Mozambique", "value": 950 },
+                             { "feature": "South Africa", "value": 780 },
+                             { "feature": "China", "value": 900 },
+                             { "feature": "Germany", "value": 100 }
+                           ]
+                         }
+                       ]
                      },
-                     options: {
-                       layout: { padding: { left: 40, right: 40, bottom: 40 } },
-                       plugins: {
-                         title: { display: true, text: 'Население стран Европы', font: { size: 20 } },
-                         legend: { display: false },
-                         datalabels: { display: false }
+                     "options": {
+                       "layout": {
+                         "padding": { "left": 40, "right": 40, "bottom": 40 }
                        },
-                       scales: {
-                         color: {
-                           axis: 'x',
-                           interpolate: 'Oranges',
-                           ticks: { color: 'black', font: { size: 14 } },
-                           legend: { position: 'bottom-left', align: 'right', length: 200, width: 40 }
+                       "plugins": {
+                         "title": {
+                           "display": true,
+                           "text": "Топ экспортеров титана (условные единицы / млн $)",
+                           "font": { "size": 20 }
+                         },
+                         "legend": { "display": false },
+                         "datalabels": { "display": false }
+                       },
+                       "scales": {
+                         "color": {
+                           "axis": "x",
+                           "display": true,
+                           "missing": "#e0e0e0",
+                           "interpolate": "Oranges",
+                           "ticks": {
+                             "color": "black",
+                             "font": { "size": 14 }
+                           },
+                           "legend": {
+                             "position": "bottom-left",
+                             "align": "right",
+                             "length": 200,
+                             "width": 40
+                           }
                          }
                        }
                      }
