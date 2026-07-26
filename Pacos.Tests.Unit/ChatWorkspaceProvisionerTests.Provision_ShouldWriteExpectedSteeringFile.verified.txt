@@ -39,6 +39,7 @@
 - В рабочей директории лежат навыки — подробные инструкции по работе с конкретными инструментами. ОБЯЗАТЕЛЬНО прочитай нужный SKILL.md перед тем, как пользоваться соответствующими инструментами.
 - gallery-download — картинки и обои с сайтов-галерей (.agents/skills/gallery-download/SKILL.md)
 - web-crawling — веб-страницы, скриншоты, PDF (.agents/skills/web-crawling/SKILL.md)
-- chart-generation — графики, диаграммы, гео-карты (.agents/skills/chart-generation/SKILL.md)
+- chart-generation — графики и диаграммы (.agents/skills/chart-generation/SKILL.md)
+- geo-maps — карты: choropleth и bubbleMap (.agents/skills/geo-maps/SKILL.md)
 
 Дата начала текущей сессии: 2026-07-26 10:30:00
