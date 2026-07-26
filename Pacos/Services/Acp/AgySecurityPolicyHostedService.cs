@@ -260,7 +260,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         [
             "oauth_creds.json", "google_accounts.json", "installation_id",
             "projects.json", "state.json", "trustedFolders.json",
-            "mcp-server-enablement.json", "settings.json", "GEMINI.md",
+            "mcp-server-enablement.json", "settings.json", "GEMINI.md", "AGENTS.md",
             "antigravity/", "antigravity-backup", "antigravity-ide",
             "commands", "config", "extensions", "history", "policies", "tmp",
         ];
@@ -273,13 +273,17 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         // conversation DBs (cross-chat history), the agy-acp session map, and our
         // own policy file (so the agent can never weaken its own sandbox). brain is
         // deliberately omitted — it is the only entry the agent is allowed to touch.
+        // "skills" and "builtin" are agy's GLOBAL Agent Skill directories on the
+        // persisted ~/.gemini volume: a skill written there would be auto-loaded into
+        // every future chat, so the agent must not be able to author one. Its own
+        // per-chat skills live under the workspace root and stay writable.
         string[] cliEntries =
         [
             "antigravity-oauth-token", "bin", "builtin", "cache", "cli.log",
             "conversations", "history.jsonl", "implicit", "installation_id",
             "keybindings.json", "knowledge", "last_check.timestamp", "log",
             "mcp", "mcp-server-enablement.json", "mcp_config.json", "scratch",
-            "sessions.json", "settings.json", "updater",
+            "sessions.json", "settings.json", "skills", "updater",
         ];
         foreach (var entry in cliEntries)
         {

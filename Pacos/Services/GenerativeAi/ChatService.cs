@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
-using Pacos.Constants;
 using Pacos.Models;
 using Pacos.Services.Acp;
 
@@ -9,27 +8,26 @@ namespace Pacos.Services.GenerativeAi;
 
 /// <summary>
 /// Application-level facade over the agy-acp session pool. It builds the textual
-/// prompt (persona lives in a per-chat steering file), shuttles attached files
+/// prompt (persona lives in a per-chat steering file, tool instructions in per-chat
+/// agent skills — see <see cref="ChatWorkspaceProvisioner"/>), shuttles attached files
 /// through a per-turn scratch directory, and returns the agent's reply together
 /// with any files it produced.
 /// </summary>
 public sealed class ChatService : IAsyncDisposable
 {
-    private const string SteeringFileName = "GEMINI.md";
-
     private readonly ILogger<ChatService> _logger;
     private readonly AcpSessionPool _sessionPool;
-    private readonly TimeProvider _timeProvider;
+    private readonly ChatWorkspaceProvisioner _workspaceProvisioner;
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _chatSemaphores = new();
 
     public ChatService(
         ILogger<ChatService> logger,
         AcpSessionPool sessionPool,
-        TimeProvider timeProvider)
+        ChatWorkspaceProvisioner workspaceProvisioner)
     {
         _logger = logger;
         _sessionPool = sessionPool;
-        _timeProvider = timeProvider;
+        _workspaceProvisioner = workspaceProvisioner;
     }
 
     public async Task<ChatResponseInfo> GetResponseAsync(
@@ -109,7 +107,7 @@ public sealed class ChatService : IAsyncDisposable
             builder.Append("[SYSTEM: ").Append(label).Append(": ").Append(path).AppendLine("]");
         }
 
-        // Detailed file-delivery rules live in the steering file (GEMINI.md); here
+        // Detailed file-delivery rules live in the steering file (AGENTS.md); here
         // we only point at this turn's output and temp directories.
         builder
             .Append("[SYSTEM: Выходная директория для файлов: ")
@@ -128,36 +126,9 @@ public sealed class ChatService : IAsyncDisposable
     private string EnsureChatWorkspace(long chatId, bool isGroupChat)
     {
         var workingDir = _sessionPool.GetWorkingDirectory(chatId);
-        Directory.CreateDirectory(workingDir);
-
-        var steeringPath = Path.Combine(workingDir, SteeringFileName);
-        if (!File.Exists(steeringPath))
-        {
-            File.WriteAllText(steeringPath, BuildSteeringContent(isGroupChat), Encoding.UTF8);
-            _logger.LogInformation("Wrote steering file for chat {ChatId} at {Path}", chatId, steeringPath);
-        }
+        _workspaceProvisioner.Provision(workingDir, isGroupChat);
 
         return workingDir;
-    }
-
-    private string BuildSteeringContent(bool isGroupChat)
-    {
-        var chatRule = isGroupChat ? Const.GroupChatRuleSystemPrompt : Const.PersonalChatRuleSystemPrompt;
-        var sessionStart = _timeProvider.GetUtcNow().UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
-
-        return Const.SystemPrompt
-               + Environment.NewLine + Environment.NewLine
-               + chatRule
-               + Environment.NewLine + Environment.NewLine
-               + Const.FileDeliveryRuleSystemPrompt
-               + Environment.NewLine + Environment.NewLine
-               + Const.GalleryDownloadRuleSystemPrompt
-               + Environment.NewLine + Environment.NewLine
-               + Const.Crawl4AiRuleSystemPrompt
-               + Environment.NewLine + Environment.NewLine
-               + Const.QuickChartRuleSystemPrompt
-               + Environment.NewLine + Environment.NewLine
-               + $"Дата начала текущей сессии: {sessionStart}";
     }
 
     private static string ResolveFileName(string? mimeType, long messageId, ChatInputOrigin origin)

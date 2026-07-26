@@ -81,6 +81,7 @@ public sealed class Program
                     services.AddSingleton<IBackgroundTaskQueue>(_ => new BackgroundTaskQueue(BackgroundTaskQueueCapacity));
                     services.AddSingleton<RankedLanguageIdentifier>(_ => new RankedLanguageIdentifierFactory().Load(RankedLanguageIdentifierFileName));
                     services.AddSingleton<AcpSessionPool>();
+                    services.AddSingleton<ChatWorkspaceProvisioner>();
                     services.AddSingleton<ChatService>();
                     services.AddSingleton<TelegramMediaService>();
                     services.AddSingleton<OutputFileSender>();
