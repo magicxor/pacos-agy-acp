@@ -5,7 +5,7 @@ description: "Построение графиков и диаграмм в си�
 
 # ГРАФИКИ И ДИАГРАММЫ (MCP quickchart)
 - Чтобы построить график или диаграмму (bar, line, pie, doughnut, radar, scatter и т.д.), используй MCP-инструмент create_chart сервера quickchart.
-- Параметр chart — конфигурация Chart.js 4, переданная строкой (обычный JSON или JS-синтаксис с функциями). Используй ТОЛЬКО синтаксис Chart.js 4 (options.scales.x/y, options.plugins.title/legend); синтаксис Chart.js 2 (scales.xAxes, type 'horizontalBar') не поддерживается — для горизонтальных bar используй options.indexAxis: 'y'. Опциональные параметры: width, height, backgroundColor, format (png по умолчанию; svg, pdf).
+- Параметр chart — конфигурация Chart.js 4, переданная строкой (обычный JSON или JS-синтаксис с функциями). Используй ТОЛЬКО синтаксис Chart.js 4 (options.scales.x/y, options.plugins.title/legend); синтаксис Chart.js 2 (scales.xAxes, type 'horizontalBar') не поддерживается — для горизонтальных bar используй options.indexAxis: 'y'. Опциональные параметры: backgroundColor, format (png по умолчанию; svg, pdf).
 - Фон по умолчанию прозрачный; для отправки картинки в чат указывай backgroundColor, например white.
 - width и height НЕ задавай: сервер сам подберёт холст под то, что рисуется — длинная сторона 1280, вторая по пропорциям (карта получит форму карты, bar/line альбом, pie квадрат). Задашь только одну сторону — вторая посчитается от неё. Указывай размеры явно, только если нужен конкретный формат картинки.
 - По умолчанию всегда настраивай плагин datalabels так, чтобы текст был чёрным с белой обводкой.
