@@ -88,17 +88,20 @@ internal sealed class AgyMcpConfigTests
                 filemcp["args"]?.AsArray().Select(node => node?.GetValue<string>()),
                 Is.EqualTo(ExpectedFileMcpArgs));
 
-            // The source is pinned to the (regex-escaped) brain staging dir and the target
-            // to the per-turn output dir under the workspace root; the baked appsettings.json
-            // empties the arrays so a single index-0 override fully defines each side (no index 1).
+            // The sources are pinned to the (regex-escaped) brain staging dir and the per-turn
+            // temp dir, and the target to the per-turn output dir under the workspace root; the
+            // baked appsettings.json empties the arrays so these overrides fully define each side.
             Assert.That(
                 filemcp["env"]?["FileMove__AllowedSourcePatterns__0"]?.GetValue<string>(),
                 Is.EqualTo("^/home/agent/\\.gemini/antigravity-cli/brain(/.*)?$"));
             Assert.That(
+                filemcp["env"]?["FileMove__AllowedSourcePatterns__1"]?.GetValue<string>(),
+                Is.EqualTo($"^{WorkspaceRoot}/[^/]+/\\.turns/[^/]+/temp(/.*)?$"));
+            Assert.That(
                 filemcp["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
                 Is.EqualTo($"^{WorkspaceRoot}/[^/]+/\\.turns/[^/]+/output(/.*)?$"));
             Assert.That(
-                filemcp["env"]?.AsObject().ContainsKey("FileMove__AllowedSourcePatterns__1"),
+                filemcp["env"]?.AsObject().ContainsKey("FileMove__AllowedSourcePatterns__2"),
                 Is.False);
             Assert.That(
                 filemcp["env"]?.AsObject().ContainsKey("FileMove__AllowedTargetPatterns__1"),
@@ -209,6 +212,9 @@ internal sealed class AgyMcpConfigTests
             Assert.That(
                 GetServer(json, "filemcp")["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
                 Is.EqualTo(@"^/srv/p\.g\+1/[^/]+/\.turns/[^/]+/output(/.*)?$"));
+            Assert.That(
+                GetServer(json, "filemcp")["env"]?["FileMove__AllowedSourcePatterns__1"]?.GetValue<string>(),
+                Is.EqualTo(@"^/srv/p\.g\+1/[^/]+/\.turns/[^/]+/temp(/.*)?$"));
             Assert.That(
                 GetServer(json, "gallerydl")["env"]?["GalleryDlApi__AllowedPathPrefixes__0"]?.GetValue<string>(),
                 Is.EqualTo(root));
