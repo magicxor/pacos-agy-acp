@@ -23,7 +23,7 @@ services:
   # container. Same wiring as production: http://quickchart:3400. The magicxor
   # fork (Chart.js 4 + built-in geo maps), not the upstream ianw image.
   quickchart:
-    image: ghcr.io/magicxor/quickchart:2.0.2
+    image: ghcr.io/magicxor/quickchart:2.0.3
 
   # Crawl4AI backend for the custom MCP server (spawned by agy inside
   # the pacos container). Same wiring as production: http://crawl4ai:11235.
