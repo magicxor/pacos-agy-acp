@@ -3,31 +3,32 @@
 # the file is a text file, apply the end of line conversions while rehydrating 
 # the freeze-dried copy of the file from the index into the usable form in the work-tree.
 # If the detection code claims that the file is binary, leave it alone.
-* text=auto eol=crlf
+#
+# LF everywhere: `eol=lf` pins the work-tree too, not just the repository, so a
+# checkout looks identical on Windows and Linux and .editorconfig can state the
+# same thing without the two contradicting each other. Modern .NET tooling - VS,
+# Rider, MSBuild - reads LF without complaint.
+#
+# Caveat: this normalisation is a client-side filter, so it does NOT cover commits
+# GitHub writes server-side - "Commit suggestion" in a review, or the web editor,
+# can still push a stray CR into a blob. Git would round-trip such a blob quietly,
+# but an editor honouring .editorconfig rewrites the file on the first save and the
+# work-tree then stays dirty for good. The "Check line endings" step in
+# .github/workflows/run_tests.yml is what catches that.
+* text=auto eol=lf
 
 *.cs text diff=csharp
 
-*.sln text eol=crlf
-*.csproj text eol=crlf
-*.cshtml text eol=crlf
+# The one real exception: cmd.exe can mis-parse labels and multi-line blocks in a
+# batch file saved with LF. Everything else that used to be pinned to CRLF here
+# (.sln, .csproj, .ps1, web assets) is fine with LF and now follows the default.
+*.bat text eol=crlf
+*.cmd text eol=crlf
 
-*.css text eol=crlf
-*.sass text eol=crlf
-*.scss text eol=crlf
-*.less text eol=crlf
-*.js text eol=crlf
-*.json text eol=crlf
-*.jsx text eol=crlf
 *.htm text diff=html
 *.html text diff=html
 
 *.map text -diff
-
-*.sql text eol=crlf
-
-*.bat text eol=crlf
-*.cmd text eol=crlf
-*.ps1 text eol=crlf
 
 # Media
 *.bmp             binary
