@@ -3,9 +3,24 @@
 # the file is a text file, apply the end of line conversions while rehydrating 
 # the freeze-dried copy of the file from the index into the usable form in the work-tree.
 # If the detection code claims that the file is binary, leave it alone.
-* text=auto eol=crlf
+#
+# `text=auto` without an `eol` is deliberate: it normalises every text file to LF
+# *in the repository* while letting each work-tree use its platform's native
+# endings (CRLF on Windows via core.autocrlf, LF on Linux/macOS). Pinning a global
+# `eol=crlf` here would instead force CRLF work-trees on Linux too. Files that must
+# keep one specific ending regardless of platform are listed explicitly below.
+#
+# Caveat: this normalisation is a client-side filter, so it does NOT cover commits
+# GitHub writes server-side - "Commit suggestion" in a review, or the web editor,
+# can still push a stray CR into a blob. The "Check line endings" step in
+# .github/workflows/run_tests.yml is what catches that.
+* text=auto
 
 *.cs text diff=csharp
+
+# Run inside Linux containers, so they must stay LF whatever the author's platform.
+Dockerfile text eol=lf
+*.sh text eol=lf
 
 *.sln text eol=crlf
 *.csproj text eol=crlf
