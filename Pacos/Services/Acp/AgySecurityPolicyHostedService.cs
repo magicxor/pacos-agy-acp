@@ -135,6 +135,20 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         List<string> allow = ["read_url(*)", "execute_url(*)"];
         List<string> deny = [];
 
+        // Server names are interpolated into rule targets below — into mcp(...) ids, and,
+        // since a server names its own schema directory, into a file path. A name carrying a
+        // separator or ".." would grant exactly what it spells out: read_file(<cli>/mcp/../..
+        // /.ssh) is a valid rule. They come from configuration rather than from the agent, so
+        // this is not an injection path, but a typo must not be able to widen the sandbox
+        // quietly — refuse to write a policy built from one at all.
+        var malformed = _mcpServerNames.Where(static name => !IsSimpleServerName(name)).ToArray();
+        if (malformed.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"MCP server names must be simple identifiers (letters, digits, '.', '_', '-'), "
+                + $"since they are interpolated into permission rules; refusing to start. Offending: {string.Join(", ", malformed)}");
+        }
+
         // MCP tools: only the servers we ourselves publish to agy (mcp_config.json,
         // see AgyMcpConfigHostedService) are allowed. mcp(...) targets are matched
         // LITERALLY as "server/tool" ids; the only recognized wildcards are the
@@ -151,7 +165,10 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
 
         // Grants/denies both read_file and write_file for a path in one call —
         // the policy intent is that anything we let the agent write it may also
-        // read, and anything we forbid writing it must not read either.
+        // read, and anything we forbid writing it must not read either. The MCP
+        // schema cache below is the one deliberate exception, and states its case
+        // there: it is readable and not writable, so it uses the two lists directly
+        // rather than either of these helpers.
         void AllowReadWrite(string path)
         {
             allow.Add($"read_file({path})");
@@ -223,6 +240,15 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         };
         return JsonSerializer.Serialize(policy, PolicyJsonOptions);
     }
+
+    /// <summary>
+    /// Whether an MCP server name is safe to interpolate into a permission rule: no path
+    /// separators, no traversal, and none of the characters agy reads as rule syntax.
+    /// </summary>
+    private static bool IsSimpleServerName(string name) =>
+        !string.IsNullOrEmpty(name)
+        && !name.Contains("..", StringComparison.Ordinal)
+        && name.All(static c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
 
     /// <summary>
     /// The single source of truth for every absolute path the agent must never read
