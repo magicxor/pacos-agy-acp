@@ -132,18 +132,23 @@ public sealed class PacosOptions
             Env = new Dictionary<string, string?>
             {
                 // The Dockerfile empties both allow-list arrays in the server's
-                // appsettings.json at image build time, so these single index-0
-                // overrides fully define the allow-list (arrays merge per index across
-                // configuration providers). The ONLY movement the agent may perform is
-                // delivering a generated file from the agy brain staging dir into the
-                // per-turn output dir, so the source is pinned to the brain dir and the
-                // target to the per-turn output dir (<root>/<chatId>/.turns/<turnId>/output).
+                // appsettings.json at image build time, so these index overrides fully
+                // define the allow-list (arrays merge per index across configuration
+                // providers). The ONLY movement the agent may perform is delivering a file
+                // it produced during this turn into the per-turn output dir, so the target
+                // is pinned to <root>/<chatId>/.turns/<turnId>/output and the sources to the
+                // two places such a file can legitimately appear: the agy brain staging dir
+                // and the per-turn temp dir (agent scratch, which crawl4ai/quickchart/gallerydl
+                // are allowed to write into). The per-turn input and output dirs are
+                // deliberately NOT sources — moving out of them delivers nothing new and only
+                // widens the reach of a future path-traversal bug.
                 // Both {brainDir} and {workspaceRootPattern} are regex-escaped during
                 // substitution: WorkingDirectoryRoot is user-configurable and may contain regex
                 // metacharacters, so it must not be inlined raw into these patterns. The plain
                 // {workspaceRoot} placeholder is deliberately NOT used here — it stays raw for
                 // gallerydl's literal path prefix (see AgyMcpConfigHostedService).
                 ["FileMove__AllowedSourcePatterns__0"] = $"^{Const.BrainDirPlaceholder}(/.*)?$",
+                ["FileMove__AllowedSourcePatterns__1"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/temp(/.*)?$",
                 ["FileMove__AllowedTargetPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/output(/.*)?$",
                 // Per-turn files are destroyed once the turn ends, so any file the agent
                 // can legitimately move was created during the current turn (bounded by

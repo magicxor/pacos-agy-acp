@@ -74,6 +74,9 @@ jobs:
             # (Pacos__Crawl4AiApiToken), so the sidecar binds 0.0.0.0 and the MCP authenticates.
             export CRAWL4AI_API_TOKEN='${{ secrets.CRAWL4AI_API_TOKEN }}'
 
+            # Pre-pull sweep: a full disk fails the pull. No --volumes - agy state must survive.
+            docker system prune -f || true
+
             docker pull "$PACOS_IMAGE"
             docker volume create "$AGY_VOLUME_NAME"
             # Ensure the named volume is owned by the non-root `agent` user. A volume
@@ -109,3 +112,8 @@ jobs:
 
             docker compose -f docker-compose.deploy.yml -p '${{ inputs.container_name }}' pull
             docker compose -f docker-compose.deploy.yml -p '${{ inputs.container_name }}' up -d --remove-orphans
+
+            # Drops the previous deploy's image; the new stack is up, so its own images are safe.
+            docker image prune -a -f || true
+
+            docker system df || true
