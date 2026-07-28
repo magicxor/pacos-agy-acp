@@ -103,7 +103,7 @@ RUN mkdir -p /opt/crawl4ai-mcp && \
 # baked-in baseline allows nothing (QuickChartMcp treats an empty pattern list as deny-all) and
 # the env override written by AgyMcpConfigHostedService fully defines it. Fail-closed: if the
 # override ever goes missing every write is blocked.
-ENV QUICKCHART_MCP_VERSION=0.0.9
+ENV QUICKCHART_MCP_VERSION=0.0.10
 RUN mkdir -p /opt/quickchart-mcp && \
     curl -fsSL "https://github.com/magicxor/QuickChartMcp/releases/download/${QUICKCHART_MCP_VERSION}/QuickChartMcp-${QUICKCHART_MCP_VERSION}.tar.gz" \
       | tar -xz -C /opt/quickchart-mcp && \

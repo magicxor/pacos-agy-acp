@@ -135,6 +135,20 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         List<string> allow = ["read_url(*)", "execute_url(*)"];
         List<string> deny = [];
 
+        // Server names are interpolated into rule targets below — into mcp(...) ids, and,
+        // since a server names its own schema directory, into a file path. A name carrying a
+        // separator or ".." would grant exactly what it spells out: read_file(<cli>/mcp/../..
+        // /.ssh) is a valid rule. They come from configuration rather than from the agent, so
+        // this is not an injection path, but a typo must not be able to widen the sandbox
+        // quietly — refuse to write a policy built from one at all.
+        var malformed = _mcpServerNames.Where(static name => !IsSimpleServerName(name)).ToArray();
+        if (malformed.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"MCP server names must be simple identifiers (letters, digits, '.', '_', '-'), "
+                + $"since they are interpolated into permission rules; refusing to start. Offending: {string.Join(", ", malformed)}");
+        }
+
         // MCP tools: only the servers we ourselves publish to agy (mcp_config.json,
         // see AgyMcpConfigHostedService) are allowed. mcp(...) targets are matched
         // LITERALLY as "server/tool" ids; the only recognized wildcards are the
@@ -151,7 +165,10 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
 
         // Grants/denies both read_file and write_file for a path in one call —
         // the policy intent is that anything we let the agent write it may also
-        // read, and anything we forbid writing it must not read either.
+        // read, and anything we forbid writing it must not read either. The MCP
+        // schema cache below is the one deliberate exception, and states its case
+        // there: it is readable and not writable, so it uses the two lists directly
+        // rather than either of these helpers.
         void AllowReadWrite(string path)
         {
             allow.Add($"read_file({path})");
@@ -170,6 +187,24 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         // auto-denied in headless mode.
         AllowReadWrite(_workspaceRoot);
         AllowReadWrite($"{cli}/brain");
+
+        // agy caches the tool schemas of every configured MCP server as
+        // <cli>/mcp/<server>/<tool>.json. Those are the definitions of the tools we hand the
+        // agent ourselves — argument names, types and descriptions, no secrets — and they are
+        // exactly what it reaches for when a tool call comes back rejected and it needs to
+        // check the call shape. So reading them is allowed, per server rather than for the
+        // whole <cli>/mcp tree: file rules cover a subtree by path prefix, and "<cli>/mcp" is
+        // also a prefix of the sibling mcp_config.json (which carries the crawl4ai token) and
+        // mcp-server-enablement.json. Both are denied by name below and Deny > Allow, but an
+        // allow that cannot reach them in the first place does not depend on that ordering.
+        // Writing is denied for the tree as a whole, prefix and all: a tool description is
+        // steering, and the agent must not be able to rewrite its own.
+        foreach (var serverName in _mcpServerNames)
+        {
+            allow.Add($"read_file({cli}/mcp/{serverName})");
+        }
+
+        deny.Add($"write_file({cli}/mcp)");
 
         // Every sensitive path the agent must never read or write.
         var deniedPaths = CollectDeniedPaths(home, gemini, cli);
@@ -205,6 +240,15 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         };
         return JsonSerializer.Serialize(policy, PolicyJsonOptions);
     }
+
+    /// <summary>
+    /// Whether an MCP server name is safe to interpolate into a permission rule: no path
+    /// separators, no traversal, and none of the characters agy reads as rule syntax.
+    /// </summary>
+    private static bool IsSimpleServerName(string name) =>
+        !string.IsNullOrEmpty(name)
+        && !name.Contains("..", StringComparison.Ordinal)
+        && name.All(static c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
 
     /// <summary>
     /// The single source of truth for every absolute path the agent must never read
@@ -271,8 +315,9 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
 
         // Inside antigravity-cli deny everything sensitive but NOT brain:
         // conversation DBs (cross-chat history), the agy-acp session map, and our
-        // own policy file (so the agent can never weaken its own sandbox). brain is
-        // deliberately omitted — it is the only entry the agent is allowed to touch.
+        // own policy file (so the agent can never weaken its own sandbox). brain and
+        // mcp are deliberately omitted — they are the only entries the agent may touch,
+        // and both are granted in BuildSettingsJson (brain read+write, mcp read only).
         // "skills" and "builtin" are agy's GLOBAL Agent Skill directories on the
         // persisted ~/.gemini volume: a skill written there would be auto-loaded into
         // every future chat, so the agent must not be able to author one. Its own
@@ -282,7 +327,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
             "antigravity-oauth-token", "bin", "builtin", "cache", "cli.log",
             "conversations", "history.jsonl", "implicit", "installation_id",
             "keybindings.json", "knowledge", "last_check.timestamp", "log",
-            "mcp", "mcp-server-enablement.json", "mcp_config.json", "scratch",
+            "mcp-server-enablement.json", "mcp_config.json", "scratch",
             "sessions.json", "settings.json", "skills", "updater",
         ];
         foreach (var entry in cliEntries)
