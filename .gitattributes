@@ -12,7 +12,9 @@
 #
 # Caveat: this normalisation is a client-side filter, so it does NOT cover commits
 # GitHub writes server-side - "Commit suggestion" in a review, or the web editor,
-# can still push a stray CR into a blob. The "Check line endings" step in
+# can still push a stray CR into a blob. Git would round-trip such a blob quietly,
+# but .editorconfig sets end_of_line = crlf, so the first editor save rewrites the
+# file and the work-tree stays dirty for good. The "Check line endings" step in
 # .github/workflows/run_tests.yml is what catches that.
 * text=auto
 

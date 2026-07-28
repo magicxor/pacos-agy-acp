@@ -31,10 +31,13 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v7
 
-    # .gitattributes normalises line endings through a client-side filter, which
-    # commits written by GitHub itself bypass - accepting a review suggestion can
-    # push a stray CR straight into a blob. That leaves the file permanently dirty
-    # for everyone who checks it out, so fail here instead of shipping it.
+    # Commits GitHub writes server-side - accepting a review suggestion, or the web
+    # editor - bypass the client-side .gitattributes filter and can push a stray CR
+    # straight into a blob. Git alone round-trips such a blob without complaining,
+    # but .editorconfig here sets end_of_line = crlf, so the first save rewrites the
+    # whole file and it stops matching the blob: the work-tree then stays dirty and
+    # `git checkout --` cannot clear it, because the editor undoes the restore.
+    # Cheaper to reject the CR at the door.
     - name: Check line endings
       run: |
         offenders=$(git ls-files --eol | grep -E '^i/(crlf|mixed)' || true)
