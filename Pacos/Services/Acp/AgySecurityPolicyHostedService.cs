@@ -171,6 +171,18 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         AllowReadWrite(_workspaceRoot);
         AllowReadWrite($"{cli}/brain");
 
+        // agy caches the tool schemas of every configured MCP server as
+        // <cli>/mcp/<server>/<tool>.json. Those are the definitions of the tools we hand
+        // the agent ourselves — argument names, types and descriptions, no secrets — and
+        // they are exactly what it reaches for when a tool call comes back rejected and it
+        // needs to check the call shape. Reading them is therefore allowed; writing is not,
+        // since a tool description is steering the agent must not be able to rewrite.
+        // Note this is a read allow on a path PREFIX, but mcp_config.json (which carries the
+        // crawl4ai token) and mcp-server-enablement.json are denied by name below, and
+        // Deny > Allow, so neither is reachable through it.
+        allow.Add($"read_file({cli}/mcp)");
+        deny.Add($"write_file({cli}/mcp)");
+
         // Every sensitive path the agent must never read or write.
         var deniedPaths = CollectDeniedPaths(home, gemini, cli);
         foreach (var path in deniedPaths)
@@ -271,8 +283,9 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
 
         // Inside antigravity-cli deny everything sensitive but NOT brain:
         // conversation DBs (cross-chat history), the agy-acp session map, and our
-        // own policy file (so the agent can never weaken its own sandbox). brain is
-        // deliberately omitted — it is the only entry the agent is allowed to touch.
+        // own policy file (so the agent can never weaken its own sandbox). brain and
+        // mcp are deliberately omitted — they are the only entries the agent may touch,
+        // and both are granted in BuildSettingsJson (brain read+write, mcp read only).
         // "skills" and "builtin" are agy's GLOBAL Agent Skill directories on the
         // persisted ~/.gemini volume: a skill written there would be auto-loaded into
         // every future chat, so the agent must not be able to author one. Its own
@@ -282,7 +295,7 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
             "antigravity-oauth-token", "bin", "builtin", "cache", "cli.log",
             "conversations", "history.jsonl", "implicit", "installation_id",
             "keybindings.json", "knowledge", "last_check.timestamp", "log",
-            "mcp", "mcp-server-enablement.json", "mcp_config.json", "scratch",
+            "mcp-server-enablement.json", "mcp_config.json", "scratch",
             "sessions.json", "settings.json", "skills", "updater",
         ];
         foreach (var entry in cliEntries)
