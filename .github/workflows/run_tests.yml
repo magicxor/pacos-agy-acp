@@ -34,7 +34,7 @@ jobs:
     # Commits GitHub writes server-side - accepting a review suggestion, or the web
     # editor - bypass the client-side .gitattributes filter and can push a stray CR
     # straight into a blob. Git alone round-trips such a blob without complaining,
-    # but .editorconfig here sets end_of_line = crlf, so the first save rewrites the
+    # but .editorconfig here sets end_of_line = lf, so the first save rewrites the
     # whole file and it stops matching the blob: the work-tree then stays dirty and
     # `git checkout --` cannot clear it, because the editor undoes the restore.
     # Cheaper to reject the CR at the door.
