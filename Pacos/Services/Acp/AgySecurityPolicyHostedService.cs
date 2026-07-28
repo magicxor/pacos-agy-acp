@@ -172,15 +172,21 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
         AllowReadWrite($"{cli}/brain");
 
         // agy caches the tool schemas of every configured MCP server as
-        // <cli>/mcp/<server>/<tool>.json. Those are the definitions of the tools we hand
-        // the agent ourselves — argument names, types and descriptions, no secrets — and
-        // they are exactly what it reaches for when a tool call comes back rejected and it
-        // needs to check the call shape. Reading them is therefore allowed; writing is not,
-        // since a tool description is steering the agent must not be able to rewrite.
-        // Note this is a read allow on a path PREFIX, but mcp_config.json (which carries the
-        // crawl4ai token) and mcp-server-enablement.json are denied by name below, and
-        // Deny > Allow, so neither is reachable through it.
-        allow.Add($"read_file({cli}/mcp)");
+        // <cli>/mcp/<server>/<tool>.json. Those are the definitions of the tools we hand the
+        // agent ourselves — argument names, types and descriptions, no secrets — and they are
+        // exactly what it reaches for when a tool call comes back rejected and it needs to
+        // check the call shape. So reading them is allowed, per server rather than for the
+        // whole <cli>/mcp tree: file rules cover a subtree by path prefix, and "<cli>/mcp" is
+        // also a prefix of the sibling mcp_config.json (which carries the crawl4ai token) and
+        // mcp-server-enablement.json. Both are denied by name below and Deny > Allow, but an
+        // allow that cannot reach them in the first place does not depend on that ordering.
+        // Writing is denied for the tree as a whole, prefix and all: a tool description is
+        // steering, and the agent must not be able to rewrite its own.
+        foreach (var serverName in _mcpServerNames)
+        {
+            allow.Add($"read_file({cli}/mcp/{serverName})");
+        }
+
         deny.Add($"write_file({cli}/mcp)");
 
         // Every sensitive path the agent must never read or write.
