@@ -25,6 +25,15 @@ jobs:
     name: Deploy
     runs-on: ubuntu-26.04
     environment: ${{ inputs.environment }}
+    # Every environment's stack lives on the same server, so all deploys queue
+    # behind one another regardless of `environment`: two docker CLIs pruning and
+    # pulling against the same daemon race on containerd's ingest store, and the
+    # loser fails with "failed commit on ref ... no such file or directory".
+    # Keep the group a constant - splitting it per environment reopens the race.
+    # cancel-in-progress is false because a queued deploy must still run.
+    concurrency:
+      group: deploy-server
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
 
@@ -74,8 +83,13 @@ jobs:
             # (Pacos__Crawl4AiApiToken), so the sidecar binds 0.0.0.0 and the MCP authenticates.
             export CRAWL4AI_API_TOKEN='${{ secrets.CRAWL4AI_API_TOKEN }}'
 
-            # Pre-pull sweep: a full disk fails the pull. No --volumes - agy state must survive.
-            docker system prune -f || true
+            # Pre-pull sweep: a full disk fails the pull. Containers and networks only -
+            # anything that prunes images kicks off containerd's content GC, and a sweep
+            # landing on an in-flight ingest fails the pull. Reclaiming image space is
+            # left to the post-deploy prune below. Never add --volumes here or elsewhere:
+            # agy state must survive.
+            docker container prune -f || true
+            docker network prune -f || true
 
             docker pull "$PACOS_IMAGE"
             docker volume create "$AGY_VOLUME_NAME"
@@ -113,7 +127,11 @@ jobs:
             docker compose -f docker-compose.deploy.yml -p '${{ inputs.container_name }}' pull
             docker compose -f docker-compose.deploy.yml -p '${{ inputs.container_name }}' up -d --remove-orphans
 
-            # Drops the previous deploy's image; the new stack is up, so its own images are safe.
-            docker image prune -a -f || true
+            # Drops the previous deploy's image: `pull` moved the tag to the new digest, so
+            # the old image is now untagged and - the new stack being up - unreferenced,
+            # which is exactly what a dangling prune collects. Deliberately not `-a`: that
+            # also drops *tagged* images no container uses yet, which is what another
+            # environment's freshly pulled image looks like until its own `up -d` runs.
+            docker image prune -f || true
 
             docker system df || true
