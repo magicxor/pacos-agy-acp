@@ -36,14 +36,14 @@ internal sealed class OutputFileSenderTests
     {
         var (media, documents, droppedMedia, droppedDocuments, oversized) = OutputFileSender.BuildPlan([]);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media, Is.Empty);
             Assert.That(documents, Is.Empty);
             Assert.That(droppedMedia, Is.Empty);
             Assert.That(droppedDocuments, Is.Empty);
             Assert.That(oversized, Is.Empty);
-        });
+        }
     }
 
     [Test]
@@ -65,14 +65,14 @@ internal sealed class OutputFileSenderTests
 
         var (media, documents, droppedMedia, droppedDocuments, oversized) = OutputFileSender.BuildPlan(files);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media.Select(m => m.File.FileName), Is.EquivalentTo(AllMediaNames));
             Assert.That(documents.Select(d => d.FileName), Is.EquivalentTo(AllDocumentNames));
             Assert.That(droppedMedia, Is.Empty);
             Assert.That(droppedDocuments, Is.Empty);
             Assert.That(oversized, Is.Empty);
-        });
+        }
     }
 
     [Test]
@@ -80,11 +80,11 @@ internal sealed class OutputFileSenderTests
     {
         var (media, documents, _, _, _) = OutputFileSender.BuildPlan([MakeFile("PHOTO.JPG"), MakeFile("CLIP.MP4"), MakeFile("DOC.PDF")]);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media, Has.Count.EqualTo(2));
             Assert.That(documents, Has.Count.EqualTo(1));
-        });
+        }
     }
 
     [Test]
@@ -101,11 +101,11 @@ internal sealed class OutputFileSenderTests
 
         var (media, documents, _, _, _) = OutputFileSender.BuildPlan(files);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(SortedMediaNames));
             Assert.That(documents.Select(d => d.FileName), Is.EqualTo(SortedDocumentNames));
-        });
+        }
     }
 
     [Test]
@@ -113,11 +113,11 @@ internal sealed class OutputFileSenderTests
     {
         var (media, _, _, _, _) = OutputFileSender.BuildPlan([MakeFile("clip.mp4"), MakeFile("pic.png")]);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media[0].Kind, Is.EqualTo(OutputMediaKind.Video));
             Assert.That(media[1].Kind, Is.EqualTo(OutputMediaKind.Photo));
-        });
+        }
     }
 
     [Test]
@@ -127,11 +127,11 @@ internal sealed class OutputFileSenderTests
 
         var (media, _, droppedMedia, _, _) = OutputFileSender.BuildPlan(files);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media, Has.Count.EqualTo(10));
             Assert.That(droppedMedia.Select(d => d.FileName), Is.EqualTo(DroppedImageNames));
-        });
+        }
     }
 
     [Test]
@@ -141,11 +141,11 @@ internal sealed class OutputFileSenderTests
 
         var (_, documents, _, droppedDocuments, _) = OutputFileSender.BuildPlan(files);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(documents, Has.Count.EqualTo(10));
             Assert.That(droppedDocuments.Select(d => d.FileName), Is.EqualTo(DroppedDocumentNames));
-        });
+        }
     }
 
     [Test]
@@ -157,13 +157,13 @@ internal sealed class OutputFileSenderTests
 
         var (media, documents, droppedMedia, droppedDocuments, _) = OutputFileSender.BuildPlan(files);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media, Has.Count.EqualTo(10));
             Assert.That(documents, Has.Count.EqualTo(10));
             Assert.That(droppedMedia.Select(d => d.FileName), Is.EqualTo(DroppedImageNames));
             Assert.That(droppedDocuments.Select(d => d.FileName), Is.EqualTo(DroppedDocumentNames));
-        });
+        }
     }
 
     [TestCase("nsfw_cat.png", true)]
@@ -185,11 +185,11 @@ internal sealed class OutputFileSenderTests
     {
         var (media, documents, _, _, _) = OutputFileSender.BuildPlan([MakeFile("nsfw_report.pdf")]);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media, Is.Empty);
             Assert.That(documents.Select(d => d.FileName), Is.EqualTo(NsfwReportName));
-        });
+        }
     }
 
     [Test]
@@ -203,11 +203,11 @@ internal sealed class OutputFileSenderTests
 
         var (media, _, _, _, oversized) = OutputFileSender.BuildPlan(files);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(SmallVideoName));
             Assert.That(oversized.Select(f => f.FileName), Is.EqualTo(HugeVideoName));
-        });
+        }
     }
 
     [Test]
@@ -221,11 +221,11 @@ internal sealed class OutputFileSenderTests
 
         var (_, documents, _, _, oversized) = OutputFileSender.BuildPlan(files);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(documents.Select(d => d.FileName), Is.EqualTo(SmallDocumentName));
             Assert.That(oversized.Select(f => f.FileName), Is.EqualTo(HugeDocumentName));
-        });
+        }
     }
 
     [Test]
@@ -233,11 +233,11 @@ internal sealed class OutputFileSenderTests
     {
         var (media, _, _, _, oversized) = OutputFileSender.BuildPlan([MakeFile("huge.png", Const.MaxTelegramFileSizeBytes + 1)]);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(HugePhotoName));
             Assert.That(oversized, Is.Empty);
-        });
+        }
     }
 
     [Test]
@@ -245,11 +245,11 @@ internal sealed class OutputFileSenderTests
     {
         var (_, documents, _, _, oversized) = OutputFileSender.BuildPlan([MakeFile("exact.zip", Const.MaxTelegramFileSizeBytes)]);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(documents.Select(d => d.FileName), Is.EqualTo(ExactDocumentName));
             Assert.That(oversized, Is.Empty);
-        });
+        }
     }
 
     [Test]
@@ -259,11 +259,11 @@ internal sealed class OutputFileSenderTests
             [MakeFile("wide.png"), MakeFile("normal.png")],
             static f => f.FileName == "wide.png");
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(NormalImageName));
             Assert.That(documents.Select(d => d.FileName), Is.EqualTo(WideImageName));
-        });
+        }
     }
 
     [Test]
@@ -279,11 +279,11 @@ internal sealed class OutputFileSenderTests
 
         var (media, documents, _, _, _) = OutputFileSender.BuildPlan(files, static f => f.FileName == "wide.png");
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(ReroutedMediaNames));
             Assert.That(documents.Select(d => d.FileName), Is.EqualTo(ReroutedDocumentNames));
-        });
+        }
     }
 
     [Test]
@@ -293,11 +293,11 @@ internal sealed class OutputFileSenderTests
             [MakeFile("clip.mp4"), MakeFile("pic.png")],
             static _ => true);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(ClipOnlyName));
             Assert.That(documents.Select(d => d.FileName), Is.EqualTo(PicName));
-        });
+        }
     }
 
     [Test]
@@ -307,12 +307,12 @@ internal sealed class OutputFileSenderTests
             [MakeFile("wide.png", Const.MaxTelegramFileSizeBytes + 1)],
             static f => f.FileName == "wide.png");
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media, Is.Empty);
             Assert.That(documents, Is.Empty);
             Assert.That(oversized.Select(f => f.FileName), Is.EqualTo(WideImageName));
-        });
+        }
     }
 
     [Test]
@@ -324,12 +324,12 @@ internal sealed class OutputFileSenderTests
 
         var (media, documents, _, droppedDocuments, _) = OutputFileSender.BuildPlan(files, static f => f.FileName == "0wide.png");
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media, Is.Empty);
             Assert.That(documents, Has.Count.EqualTo(10));
             Assert.That(droppedDocuments.Select(d => d.FileName), Is.EqualTo(DroppedPdfName));
-        });
+        }
     }
 
     [Test]
@@ -337,11 +337,11 @@ internal sealed class OutputFileSenderTests
     {
         var (media, documents, _, _, _) = OutputFileSender.BuildPlan([MakeFile("nsfw_wide.png")], static _ => true);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media, Is.Empty);
             Assert.That(documents.Select(d => d.FileName), Is.EqualTo(NsfwWideImageName));
-        });
+        }
     }
 
     [Test]
@@ -349,11 +349,11 @@ internal sealed class OutputFileSenderTests
     {
         var (media, documents, _, _, _) = OutputFileSender.BuildPlan([MakeFile("pic.png"), MakeFile("doc.pdf")]);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(media.Select(m => m.File.FileName), Is.EqualTo(PicName));
             Assert.That(documents.Select(d => d.FileName), Is.EqualTo(DocPdfName));
-        });
+        }
     }
 
     private static OutputFile MakeFile(string fileName) => new(fileName, []);

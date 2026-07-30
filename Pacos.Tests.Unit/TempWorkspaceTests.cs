@@ -20,12 +20,12 @@ internal sealed class TempWorkspaceTests
             {
                 turnDirectory = workspace.TurnDirectory;
 
-                Assert.Multiple(() =>
+                using (Assert.EnterMultipleScope())
                 {
                     Assert.That(Directory.Exists(workspace.TempDirectory), Is.True);
                     Assert.That(workspace.TempDirectory, Does.StartWith(workspace.TurnDirectory));
                     Assert.That(workspace.TempDirectory, Is.Not.EqualTo(workspace.OutputDirectory));
-                });
+                }
 
                 File.WriteAllText(Path.Combine(workspace.OutputDirectory, "delivered.txt"), "deliver me");
                 File.WriteAllText(Path.Combine(workspace.TempDirectory, "scratch.bin"), "do not deliver");
@@ -33,7 +33,7 @@ internal sealed class TempWorkspaceTests
                 collectedNames = workspace.CollectOutputFiles().Select(file => file.FileName).ToList();
             }
 
-            Assert.Multiple(() =>
+            using (Assert.EnterMultipleScope())
             {
                 // Only the output file is collected; the temp file is never sent to the user.
                 Assert.That(collectedNames, Has.Count.EqualTo(1));
@@ -41,7 +41,7 @@ internal sealed class TempWorkspaceTests
                 Assert.That(collectedNames, Has.No.Member("scratch.bin"));
                 // The whole turn directory (temp included) is removed on disposal.
                 Assert.That(Directory.Exists(turnDirectory), Is.False);
-            });
+            }
         }
         finally
         {

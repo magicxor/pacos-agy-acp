@@ -26,11 +26,11 @@ internal sealed class ImageDownscalerTests
     {
         var (targetWidth, targetHeight) = ImageDownscaler.ComputeTargetDimensions(width, height, MaxDimension);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(targetWidth, Is.EqualTo(expectedWidth));
             Assert.That(targetHeight, Is.EqualTo(expectedHeight));
-        });
+        }
     }
 
     [Test]
@@ -41,13 +41,13 @@ internal sealed class ImageDownscalerTests
         var result = CreateDownscaler().FitWithinBounds(file);
         var (format, width, height) = Probe(result.Content);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(result.FileName, Is.EqualTo("huge.jpg"));
             Assert.That(format, Is.EqualTo(SKEncodedImageFormat.Jpeg));
             Assert.That(width, Is.EqualTo(2560));
             Assert.That(height, Is.EqualTo(1920));
-        });
+        }
     }
 
     [Test]
@@ -58,13 +58,13 @@ internal sealed class ImageDownscalerTests
         var result = CreateDownscaler().FitWithinBounds(file);
         var (format, width, height) = Probe(result.Content);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(result.FileName, Is.EqualTo("tower.jpg"));
             Assert.That(format, Is.EqualTo(SKEncodedImageFormat.Jpeg));
             Assert.That(width, Is.EqualTo(1280));
             Assert.That(height, Is.EqualTo(2560));
-        });
+        }
     }
 
     [Test]
@@ -75,11 +75,11 @@ internal sealed class ImageDownscalerTests
         var result = CreateDownscaler().FitWithinBounds(file);
         var (_, width, height) = Probe(result.Content);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(width, Is.EqualTo(800));
             Assert.That(height, Is.EqualTo(600));
-        });
+        }
     }
 
     [Test]
