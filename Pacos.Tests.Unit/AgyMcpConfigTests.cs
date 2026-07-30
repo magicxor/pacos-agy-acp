@@ -46,7 +46,7 @@ internal sealed class AgyMcpConfigTests
         var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir, ApiToken);
         var gallerydl = GetServer(json, "gallerydl");
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(gallerydl["command"]?.GetValue<string>(), Is.EqualTo("dotnet"));
             Assert.That(
@@ -72,7 +72,7 @@ internal sealed class AgyMcpConfigTests
             Assert.That(gallerydl.ContainsKey("headers"), Is.False);
             Assert.That(gallerydl.ContainsKey("envFile"), Is.False);
             Assert.That(gallerydl.ContainsKey("url"), Is.False);
-        });
+        }
     }
 
     [Test]
@@ -81,7 +81,7 @@ internal sealed class AgyMcpConfigTests
         var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir, ApiToken);
         var filemcp = GetServer(json, "filemcp");
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(filemcp["command"]?.GetValue<string>(), Is.EqualTo("dotnet"));
             Assert.That(
@@ -114,7 +114,7 @@ internal sealed class AgyMcpConfigTests
             Assert.That(filemcp.ContainsKey("headers"), Is.False);
             Assert.That(filemcp.ContainsKey("envFile"), Is.False);
             Assert.That(filemcp.ContainsKey("url"), Is.False);
-        });
+        }
     }
 
     [Test]
@@ -123,7 +123,7 @@ internal sealed class AgyMcpConfigTests
         var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir, ApiToken);
         var crawl4ai = GetServer(json, "crawl4ai");
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(crawl4ai["command"]?.GetValue<string>(), Is.EqualTo("dotnet"));
             Assert.That(
@@ -155,7 +155,7 @@ internal sealed class AgyMcpConfigTests
             Assert.That(crawl4ai.ContainsKey("headers"), Is.False);
             Assert.That(crawl4ai.ContainsKey("envFile"), Is.False);
             Assert.That(crawl4ai.ContainsKey("url"), Is.False);
-        });
+        }
     }
 
     [Test]
@@ -164,7 +164,7 @@ internal sealed class AgyMcpConfigTests
         var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir, ApiToken);
         var quickchart = GetServer(json, "quickchart");
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(quickchart["command"]?.GetValue<string>(), Is.EqualTo("dotnet"));
             Assert.That(
@@ -196,7 +196,7 @@ internal sealed class AgyMcpConfigTests
             Assert.That(quickchart.ContainsKey("headers"), Is.False);
             Assert.That(quickchart.ContainsKey("envFile"), Is.False);
             Assert.That(quickchart.ContainsKey("url"), Is.False);
-        });
+        }
     }
 
     [Test]
@@ -207,7 +207,7 @@ internal sealed class AgyMcpConfigTests
         const string root = "/srv/p.g+1";
         var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, root, BrainDir, ApiToken);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(
                 GetServer(json, "filemcp")["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
@@ -218,7 +218,7 @@ internal sealed class AgyMcpConfigTests
             Assert.That(
                 GetServer(json, "gallerydl")["env"]?["GalleryDlApi__AllowedPathPrefixes__0"]?.GetValue<string>(),
                 Is.EqualTo(root));
-        });
+        }
     }
 
     [Test]
@@ -232,13 +232,13 @@ internal sealed class AgyMcpConfigTests
         var root = AcpSessionPool.ResolveRoot(options);
         var json = AgyMcpConfigHostedService.BuildConfigJson(options.McpServers, root, BrainDir, ApiToken);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(root, Is.EqualTo("/data/work"));
             Assert.That(
                 GetServer(json, "filemcp")["env"]?["FileMove__AllowedTargetPatterns__0"]?.GetValue<string>(),
                 Is.EqualTo(@"^/data/work/[^/]+/\.turns/[^/]+/output(/.*)?$"));
-        });
+        }
     }
 
     [Test]
@@ -251,12 +251,12 @@ internal sealed class AgyMcpConfigTests
 
         var remote = GetServer(AgyMcpConfigHostedService.BuildConfigJson(servers, WorkspaceRoot, BrainDir, ApiToken), "remote");
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(remote["type"]?.GetValue<string>(), Is.EqualTo("sse"));
             Assert.That(remote["url"]?.GetValue<string>(), Is.EqualTo("https://example.com/sse"));
             Assert.That(remote.ContainsKey("command"), Is.False);
-        });
+        }
     }
 
     [Test]
@@ -267,7 +267,7 @@ internal sealed class AgyMcpConfigTests
         var json = AgyMcpConfigHostedService.BuildConfigJson(mcpServers, "/data/work", BrainDir, ApiToken);
         var env = GetServer(json, "gallerydl")["env"];
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(
                 env?["GalleryDlApi__AllowedPathPrefixes__0"]?.GetValue<string>(),
@@ -278,6 +278,6 @@ internal sealed class AgyMcpConfigTests
             Assert.That(
                 mcpServers["gallerydl"].Env?["GalleryDlApi__AllowedPathPrefixes__0"],
                 Is.EqualTo(Const.WorkspaceRootPlaceholder));
-        });
+        }
     }
 }
