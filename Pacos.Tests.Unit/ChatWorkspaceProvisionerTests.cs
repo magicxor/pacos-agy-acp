@@ -39,7 +39,7 @@ internal sealed class ChatWorkspaceProvisionerTests
     {
         CreateProvisioner().Provision(_workingDirectory, isGroupChat: true);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(File.Exists(SteeringFilePath()), Is.True);
 
@@ -52,7 +52,7 @@ internal sealed class ChatWorkspaceProvisionerTests
                 Assert.That(content, Does.Contain($"description: \"{skill.Description}\""), skill.FolderName);
                 Assert.That(content, Does.Contain(skill.Body), skill.FolderName);
             }
-        });
+        }
     }
 
     [Test]
@@ -62,7 +62,7 @@ internal sealed class ChatWorkspaceProvisionerTests
 
         var steeringContent = File.ReadAllText(SteeringFilePath());
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             foreach (var skill in AgentSkills.All)
             {
@@ -74,7 +74,7 @@ internal sealed class ChatWorkspaceProvisionerTests
             Assert.That(steeringContent, Does.Not.Contain("download_gallery"));
             Assert.That(steeringContent, Does.Not.Contain("create_chart"));
             Assert.That(steeringContent, Does.Not.Contain("outputDirectory"));
-        });
+        }
     }
 
     [Test]
@@ -86,11 +86,11 @@ internal sealed class ChatWorkspaceProvisionerTests
 
         CreateProvisioner().Provision(_workingDirectory, isGroupChat: false);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(File.Exists(legacyPath), Is.False);
             Assert.That(File.Exists(SteeringFilePath()), Is.True);
-        });
+        }
     }
 
     [Test]
@@ -105,12 +105,12 @@ internal sealed class ChatWorkspaceProvisionerTests
 
         provisioner.Provision(_workingDirectory, isGroupChat: false);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             // The steering file ends with the session start stamp, so it must not be rewritten.
             Assert.That(File.ReadAllText(SteeringFilePath()), Is.EqualTo("hand-edited steering file"));
             Assert.That(File.ReadAllText(skillPath), Does.Contain(AgentSkills.All[0].Body));
-        });
+        }
     }
 
     [Test]
@@ -125,7 +125,7 @@ internal sealed class ChatWorkspaceProvisionerTests
 
         provisioner.Provision(_workingDirectory, isGroupChat: false);
 
-        Assert.Multiple(() =>
+        using (Assert.EnterMultipleScope())
         {
             Assert.That(Directory.Exists(staleDirectory), Is.False);
 
@@ -133,7 +133,7 @@ internal sealed class ChatWorkspaceProvisionerTests
             {
                 Assert.That(File.Exists(SkillFilePath(skill.FolderName)), Is.True, skill.FolderName);
             }
-        });
+        }
     }
 
     [Test]

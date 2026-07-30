@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using Pacos.Constants;
 
 namespace Pacos.Models.Options;
@@ -108,7 +109,7 @@ public sealed class PacosOptions
     /// with the resolved workspace root (<see cref="Services.Acp.AcpSessionPool.ResolveRoot"/>),
     /// so file-saving allow-lists always track <see cref="WorkingDirectoryRoot"/>.
     /// </summary>
-#pragma warning disable S5332 // plain http is intentional: container-to-container traffic on the internal compose network
+    [SuppressMessage("Minor Vulnerability", "S5332:Clear-text protocols should not be used", Justification = "Plain http is intentional: container-to-container traffic on the internal compose network")]
     public Dictionary<string, McpServer> McpServers { get; set; } = new()
     {
         ["gallerydl"] = new McpServer
@@ -119,9 +120,6 @@ public sealed class PacosOptions
             {
                 ["GalleryDlApi__BaseUrl"] = "http://gallerydl-webapi:8080",
                 ["GalleryDlApi__MaxTake"] = "10",
-                // The Dockerfile empties AllowedPathPrefixes in the server's appsettings.json
-                // at image build time, so this single index fully defines the allow-list
-                // (arrays merge per index across configuration providers).
                 ["GalleryDlApi__AllowedPathPrefixes__0"] = Const.WorkspaceRootPlaceholder,
             },
         },
@@ -131,33 +129,11 @@ public sealed class PacosOptions
             Args = ["/opt/file-mcp/FileMcp.dll"],
             Env = new Dictionary<string, string?>
             {
-                // The Dockerfile empties both allow-list arrays in the server's
-                // appsettings.json at image build time, so these index overrides fully
-                // define the allow-list (arrays merge per index across configuration
-                // providers). The ONLY movement the agent may perform is delivering a file
-                // it produced during this turn into the per-turn output dir, so the target
-                // is pinned to <root>/<chatId>/.turns/<turnId>/output and the sources to the
-                // two places such a file can legitimately appear: the agy brain staging dir
-                // and the per-turn temp dir (agent scratch, which crawl4ai/quickchart/gallerydl
-                // are allowed to write into). The per-turn input and output dirs are
-                // deliberately NOT sources — moving out of them delivers nothing new and only
-                // widens the reach of a future path-traversal bug.
-                // Both {brainDir} and {workspaceRootPattern} are regex-escaped during
-                // substitution: WorkingDirectoryRoot is user-configurable and may contain regex
-                // metacharacters, so it must not be inlined raw into these patterns. The plain
-                // {workspaceRoot} placeholder is deliberately NOT used here — it stays raw for
-                // gallerydl's literal path prefix (see AgyMcpConfigHostedService).
                 ["FileMove__AllowedSourcePatterns__0"] = $"^{Const.BrainDirPlaceholder}(/.*)?$",
-                ["FileMove__AllowedSourcePatterns__1"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/temp(/.*)?$",
-                ["FileMove__AllowedTargetPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/output(/.*)?$",
-                // Per-turn files are destroyed once the turn ends, so any file the agent
-                // can legitimately move was created during the current turn (bounded by
-                // PromptTimeoutSeconds, default 300s). Keep this a tight, turn-scoped
-                // bound: comfortably above PromptTimeoutSeconds so a long turn's fresh
-                // file is never falsely rejected, but far too short to let a future
-                // path-traversal bug reach a stale file. Do NOT widen it toward hours/days
-                // (there are no legitimately old files to move); if PromptTimeoutSeconds
-                // is ever raised above this, bump this in step, not the other way around.
+                ["FileMove__AllowedSourcePatterns__1"] =
+                    $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/temp(/.*)?$",
+                ["FileMove__AllowedTargetPatterns__0"] =
+                    $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/output(/.*)?$",
                 ["FileMove__MaxFileAgeSeconds"] = "600",
             },
         },
@@ -167,23 +143,10 @@ public sealed class PacosOptions
             Args = ["/opt/crawl4ai-mcp/Crawl4AiMcp.dll"],
             Env = new Dictionary<string, string?>
             {
-                // crawl4ai REST backend, reachable only on the internal compose network.
                 ["Crawl4Ai__BaseUrl"] = "http://crawl4ai:11235",
-                // Bearer token for the crawl4ai backend, substituted at startup from
-                // PacosOptions.Crawl4AiApiToken. The crawl4ai sidecar MUST be started with the same
-                // value in CRAWL4AI_API_TOKEN: without it crawl4ai 0.9.x binds loopback-only and is
-                // unreachable from this container (Connection refused), and with it every call must
-                // carry the matching bearer token or the backend returns HTTP 401.
                 ["Crawl4Ai__ApiToken"] = Const.Crawl4AiApiTokenPlaceholder,
-                // The Dockerfile empties AllowedOutputPatterns in the server's appsettings.json
-                // at image build time, so this single index-0 override fully defines the allow-list
-                // (an empty list is deny-all). Constrain writes to the per-turn output dir (delivered
-                // to the user) and the per-turn temp dir (agent scratch for downloads it only needs to
-                // read — never delivered); both are removed when the turn ends. The regex-escaped
-                // {workspaceRootPattern} is used (not the raw {workspaceRoot}) because
-                // WorkingDirectoryRoot is user-configurable and may contain regex metacharacters
-                // (see AgyMcpConfigHostedService).
-                ["Crawl4Ai__AllowedOutputPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$",
+                ["Crawl4Ai__AllowedOutputPatterns__0"] =
+                    $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$",
             },
         },
         ["quickchart"] = new McpServer
@@ -192,20 +155,12 @@ public sealed class PacosOptions
             Args = ["/opt/quickchart-mcp/QuickChartMcp.dll"],
             Env = new Dictionary<string, string?>
             {
-                // QuickChart rendering backend, reachable only on the internal compose network.
-                // Self-hosted QuickChart requires no API key, so unlike crawl4ai there is no
-                // token placeholder to substitute.
                 ["QuickChart__BaseUrl"] = "http://quickchart:3400",
-                // Same rationale as crawl4ai above: the Dockerfile empties AllowedOutputPatterns
-                // in the server's appsettings.json at image build time, so this single index-0
-                // override fully defines the allow-list (an empty list is deny-all). Writes are
-                // constrained to the per-turn output/temp dirs via the regex-escaped
-                // {workspaceRootPattern}.
-                ["QuickChart__AllowedOutputPatterns__0"] = $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$",
+                ["QuickChart__AllowedOutputPatterns__0"] =
+                    $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$",
             },
         },
     };
-#pragma warning restore S5332
 
     /// <summary>
     /// Which set of agy command-permission rules to write into settings.json.
