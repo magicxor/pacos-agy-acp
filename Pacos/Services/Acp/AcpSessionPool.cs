@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Globalization;
 using Microsoft.Extensions.Options;
@@ -14,6 +13,19 @@ namespace Pacos.Services.Acp;
 /// </summary>
 public sealed class AcpSessionPool : IAsyncDisposable
 {
+    /// <summary>
+    /// Carries the Telegram chat id into the chat's agy-acp process and, by inheritance,
+    /// into every MCP server agy spawns for it (verified: agy passes its own environment
+    /// on to stdio MCP servers, merged with the per-server <c>env</c> block of
+    /// mcp_config.json, which takes precedence). That is the only channel by which a
+    /// stateful MCP server can learn which chat it is serving without the model being
+    /// able to influence it — a chat id passed as a tool argument could be silently
+    /// wrong, and no server-side validation can tell a wrong chat id from a right one.
+    /// Deliberately outside the <c>Pacos__</c> configuration namespace that
+    /// <see cref="BuildEnvironment"/> strips: it is agent-facing state, not bot config.
+    /// </summary>
+    public const string TelegramChatIdEnvironmentVariable = "TELEGRAM_CHAT_ID";
+
     private readonly ILogger<AcpSessionPool> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly string _command;
@@ -21,7 +33,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
     private readonly string _root;
     private readonly TimeSpan _promptTimeout;
     private readonly TimeSpan _idleTimeout;
-    private readonly IReadOnlyDictionary<string, string?> _environment;
+    private readonly PacosOptions _options;
     private readonly string? _fallbackModel;
 
     private readonly ConcurrentDictionary<long, ChatSession> _sessions = new();
@@ -39,7 +51,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
         _promptTimeout = TimeSpan.FromSeconds(value.PromptTimeoutSeconds);
         _idleTimeout = TimeSpan.FromMinutes(value.SessionIdleTimeoutMinutes);
         _root = ResolveRoot(value);
-        _environment = BuildEnvironment(value);
+        _options = value;
         _fallbackModel = ResolveFallbackModel(value);
     }
 
@@ -238,7 +250,12 @@ public sealed class AcpSessionPool : IAsyncDisposable
         var workingDir = GetWorkingDirectory(chatId);
         Directory.CreateDirectory(workingDir);
 
-        var connection = new AcpConnection(_logger, _command, _args, workingDir, _environment);
+        var environment = BuildEnvironment(
+            _options,
+            chatId,
+            Environment.GetEnvironmentVariables().Keys.OfType<string>());
+
+        var connection = new AcpConnection(_logger, _command, _args, workingDir, environment);
         try
         {
             connection.Start();
@@ -275,19 +292,30 @@ public sealed class AcpSessionPool : IAsyncDisposable
         }
     }
 
-    private static Dictionary<string, string?> BuildEnvironment(PacosOptions options)
+    /// <summary>
+    /// Builds the environment for one chat's agy-acp process. CliWrap layers the result on
+    /// top of the inherited environment (null removes a variable): the bot's own
+    /// configuration is stripped so secrets such as the Telegram token can never reach the
+    /// spawned agent, then only what agy legitimately needs is injected. The injections come
+    /// last on purpose, so they win over any inherited value of the same name.
+    /// <para>
+    /// Public — and taking the inherited variable names as an argument instead of reading the
+    /// process environment itself — so tests can pin both the stripping and the per-chat
+    /// <see cref="TelegramChatIdEnvironmentVariable"/> without touching global state.
+    /// </para>
+    /// </summary>
+    public static Dictionary<string, string?> BuildEnvironment(
+        PacosOptions options,
+        long chatId,
+        IEnumerable<string> inheritedVariableNames)
     {
-        // CliWrap layers these on top of the inherited environment (null removes a
-        // variable). Strip the bot's own configuration so secrets such as the
-        // Telegram token can never reach the spawned agent, then inject only what
-        // agy legitimately needs.
         var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
+        foreach (var name in inheritedVariableNames)
         {
-            if (entry.Key is string key && key.StartsWith("Pacos__", StringComparison.OrdinalIgnoreCase))
+            if (name.StartsWith("Pacos__", StringComparison.OrdinalIgnoreCase))
             {
-                environment[key] = null;
+                environment[name] = null;
             }
         }
 
@@ -295,6 +323,8 @@ public sealed class AcpSessionPool : IAsyncDisposable
         {
             environment["GEMINI_API_KEY"] = options.GeminiApiKey;
         }
+
+        environment[TelegramChatIdEnvironmentVariable] = chatId.ToString(CultureInfo.InvariantCulture);
 
         // agy >= 1.1.x caps headless runs with its own --print-timeout (default
         // 5m), so align it with the bot's prompt timeout or longer turns would be

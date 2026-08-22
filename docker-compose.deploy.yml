@@ -40,6 +40,7 @@ services:
       - gallerydl-webapi
       - crawl4ai
       - quickchart
+      - movieadvisor-api
     networks:
       - pacos-net
 
@@ -95,6 +96,20 @@ services:
     networks:
       - pacos-net
 
+  # MovieAdvisor REST API backend for the movieadvisor MCP server that runs inside the pacos
+  # container (spawned by agy). Reachable only on the compose network as
+  # http://movieadvisor-api:8080 - no published ports. It refreshes the Cineplex catalogue on its
+  # own cron schedule (09:00 America/Toronto by default) and owns the per-chat history of which
+  # releases each chat has already been offered, so its volume has to outlive deploys.
+  movieadvisor-api:
+    image: ghcr.io/magicxor/movieadvisor-api:0.0.0-alpha.0
+    container_name: ${CONTAINER_NAME}-movieadvisor-api
+    restart: always
+    volumes:
+      - movieadvisor-state:/data
+    networks:
+      - pacos-net
+
 networks:
   pacos-net:
 
@@ -104,3 +119,7 @@ volumes:
     # so the historical volume (and agy auth state inside it) is reused as-is.
     name: ${AGY_VOLUME_NAME}
     external: true
+  movieadvisor-state:
+    # The movie API state (SQLite history + the cached Cineplex key). Unlike agy-state this one
+    # is compose-managed: it is created on the first deploy and never pruned (the deploy workflow
+    # deliberately prunes containers, networks and images only).
