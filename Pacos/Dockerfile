@@ -110,6 +110,24 @@ RUN mkdir -p /opt/quickchart-mcp && \
     jq '.QuickChart.AllowedOutputPatterns = []' /opt/quickchart-mcp/appsettings.json > /opt/quickchart-mcp/appsettings.json.tmp && \
     mv /opt/quickchart-mcp/appsettings.json.tmp /opt/quickchart-mcp/appsettings.json
 
+# Install the MovieAdvisor MCP server (https://github.com/magicxor/MovieAdvisor), pinned to a
+# released version. The framework-dependent build is arch-neutral IL; agy spawns it as
+# `dotnet /opt/movieadvisor-mcp/MovieAdvisor.McpServer.dll` according to the mcp_config.json
+# written at startup by AgyMcpConfigHostedService. It is a local stdio server over the MovieAdvisor
+# REST API (the movieadvisor-api sidecar on the compose network, http://movieadvisor-api:8080),
+# which owns the per-chat history of which releases a chat has already been offered. Unlike the
+# other servers it writes no files, so there is no path allow-list to empty out - and the chat it
+# serves is not configured here either: it comes from TELEGRAM_CHAT_ID, which AcpSessionPool
+# injects into each chat's agy-acp process. What IS emptied is the baked-in BaseUrl, which points
+# at localhost and is never right inside this container: fail-closed, so a missing env override
+# stops the server at startup instead of failing every tool call with a connection error.
+ENV MOVIEADVISOR_MCP_VERSION=0.0.0-alpha.0
+RUN mkdir -p /opt/movieadvisor-mcp && \
+    curl -fsSL "https://github.com/magicxor/MovieAdvisor/releases/download/${MOVIEADVISOR_MCP_VERSION}/MovieAdvisor.McpServer-${MOVIEADVISOR_MCP_VERSION}.tar.gz" \
+      | tar -xz -C /opt/movieadvisor-mcp && \
+    jq '.MovieAdvisorApi.BaseUrl = ""' /opt/movieadvisor-mcp/appsettings.json > /opt/movieadvisor-mcp/appsettings.json.tmp && \
+    mv /opt/movieadvisor-mcp/appsettings.json.tmp /opt/movieadvisor-mcp/appsettings.json
+
 # Pin the agy CLI to the installed version; never let it self-update at runtime.
 ENV AGY_CLI_DISABLE_AUTO_UPDATE=true
 
