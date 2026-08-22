@@ -41,5 +41,6 @@
 - web-crawling — веб-страницы, скриншоты, PDF (.agents/skills/web-crawling/SKILL.md)
 - chart-generation — графики и диаграммы (.agents/skills/chart-generation/SKILL.md)
 - geo-maps — карты: choropleth и bubbleMap (.agents/skills/geo-maps/SKILL.md)
+- movie-releases — новинки кино (.agents/skills/movie-releases/SKILL.md)
 
 Дата начала текущей сессии: 2026-07-26 10:30:00

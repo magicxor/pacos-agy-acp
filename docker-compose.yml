@@ -13,6 +13,7 @@ services:
       - gallerydl-webapi
       - crawl4ai
       - quickchart
+      - movieadvisor-api
 
   # gallery-dl backend for the GalleryDl MCP server (spawned by agy inside the
   # pacos container). Same wiring as production: http://gallerydl-webapi:8080.
@@ -35,3 +36,15 @@ services:
       # pacos container (Connection refused). Setting a token makes it bind 0.0.0.0 and requires
       # the same bearer token on every call — the pacos service passes the same value to the MCP.
       - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN:-dev-local-crawl4ai-token}
+
+  # MovieAdvisor REST API backend for the movieadvisor MCP server (spawned by agy inside the
+  # pacos container). Same wiring as production: http://movieadvisor-api:8080. The named volume
+  # holds its SQLite database - the per-chat history of which releases a chat has already been
+  # offered - so restarting the stack does not make everything look new again.
+  movieadvisor-api:
+    image: ghcr.io/magicxor/movieadvisor-api:0.0.0-alpha.0
+    volumes:
+      - movieadvisor-state:/data
+
+volumes:
+  movieadvisor-state:

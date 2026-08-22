@@ -13,6 +13,7 @@ Pacos is a .NET-based Telegram bot designed to interact in group chats. It drive
 
 - **AI-Powered Chat**: Responds to mentions (e.g., "pacos", "пакос") or direct messages by driving the agy agent over ACP. Each chat gets its own working directory holding a persona steering file (`AGENTS.md`) and a set of agy Agent Skills (`.agents/skills/<skill>/SKILL.md`) that carry the tool-specific instructions and are loaded on demand instead of on every turn.
 - **Image Generation**: Generate or modify images via the `!drawx <prompt>` command. An optional source image can be supplied with the command or by replying to a message that contains one.
+- **Movie Releases**: Answers "what is new in cinemas" per chat. The `movieadvisor` MCP server asks the `movieadvisor-api` sidecar which current releases this chat has not been offered yet; the sidecar refreshes the catalogue on its own daily schedule and remembers what it handed out, so nothing is suggested twice. The chat it answers for comes from `TELEGRAM_CHAT_ID`, injected per chat into the agent process — never from a tool argument the model could get wrong.
 - **File Delivery**: The agent can return generated files (images, documents, etc.) by moving them into a per-turn output directory via the filemcp MCP server, which the bot then forwards back to the user.
 - **Chat Management**:
     - **Reset History**: Users can clear the agent's session for a specific chat with the `!resetx` command.
@@ -61,7 +62,7 @@ The bot reads its settings from environment variables or an `appsettings.json` f
     dotnet run
     ```
 
-When running in Docker, the agy state directory (`/home/agent/.gemini`) should be backed by a named volume so the agent's OAuth credentials and state persist across deployments (see the deploy workflow).
+When running in Docker, the agy state directory (`/home/agent/.gemini`) should be backed by a named volume so the agent's OAuth credentials and state persist across deployments (see the deploy workflow). The `movieadvisor-api` sidecar keeps its SQLite database on the `movieadvisor-state` volume for the same reason: without it every chat's movie history resets on redeploy and the whole cinema line-up looks new again.
 
 ## Bot Commands
 
