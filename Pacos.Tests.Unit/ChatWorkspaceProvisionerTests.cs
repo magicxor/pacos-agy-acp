@@ -150,6 +150,7 @@ internal sealed class ChatWorkspaceProvisionerTests
     [TestCase("web-crawling")]
     [TestCase("chart-generation")]
     [TestCase("geo-maps")]
+    [TestCase("movie-releases")]
     public async Task Provision_ShouldWriteExpectedSkillFile(string folderName)
     {
         CreateProvisioner().Provision(_workingDirectory, isGroupChat: true);
