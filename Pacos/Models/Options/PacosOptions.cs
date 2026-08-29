@@ -160,6 +160,20 @@ public sealed class PacosOptions
                     $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$",
             },
         },
+        // Writes no files, so it needs no path allow-list; its state is per chat and lives in
+        // the REST API behind it. The chat identity deliberately does NOT belong here: the
+        // server reads it from TELEGRAM_CHAT_ID, which AcpSessionPool injects into each chat's
+        // agy-acp process and agy passes on to the MCP servers it spawns. Pinning it in this
+        // env block would give every chat the same value — that is, one shared history.
+        ["movieadvisor"] = new McpServer
+        {
+            Command = "dotnet",
+            Args = ["/opt/movieadvisor-mcp/MovieAdvisor.McpServer.dll"],
+            Env = new Dictionary<string, string?>
+            {
+                ["MovieAdvisorApi__BaseUrl"] = "http://movieadvisor-api:8080",
+            },
+        },
     };
 
     /// <summary>
