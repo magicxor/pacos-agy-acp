@@ -190,7 +190,7 @@ public sealed class AcpConnection : IAsyncDisposable
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(timeout);
 
-            await using (timeoutCts.Token.Register(() => tcs.TrySetCanceled()))
+            await using (timeoutCts.Token.Register(() => tcs.TrySetCanceled(CancellationToken.None)))
             {
                 try
                 {
