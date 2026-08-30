@@ -42,7 +42,7 @@ services:
   # holds its SQLite database - the per-chat history of which releases a chat has already been
   # offered - so restarting the stack does not make everything look new again.
   movieadvisor-api:
-    image: ghcr.io/magicxor/movieadvisor-api:0.0.0-alpha.1
+    image: ghcr.io/magicxor/movieadvisor-api:0.0.0-alpha.2
     volumes:
       - movieadvisor-state:/data
 
