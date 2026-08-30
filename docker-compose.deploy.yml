@@ -102,7 +102,7 @@ services:
   # own cron schedule (09:00 America/Toronto by default) and owns the per-chat history of which
   # releases each chat has already been offered, so its volume has to outlive deploys.
   movieadvisor-api:
-    image: ghcr.io/magicxor/movieadvisor-api:0.0.0-alpha.1
+    image: ghcr.io/magicxor/movieadvisor-api:0.0.0-alpha.2
     container_name: ${CONTAINER_NAME}-movieadvisor-api
     restart: always
     volumes:
