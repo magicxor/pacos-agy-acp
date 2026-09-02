@@ -124,6 +124,41 @@ public sealed class MentionHandler
         return richMessage?.GetPlainText();
     }
 
+    /// <summary>
+    /// Resolves the replied-to content the agent should see. When the reply quotes only a part of
+    /// the original message, that fragment is what the user asks about, so it replaces the full
+    /// text of the original message.
+    /// </summary>
+    internal static (string Text, bool IsQuotedFragment) ResolveRepliedToText(Message updateMessage)
+    {
+        var quotedFragment = updateMessage.Quote?.Text.Trim();
+        if (!string.IsNullOrEmpty(quotedFragment))
+        {
+            return (quotedFragment, true);
+        }
+
+        var repliedToMessage = updateMessage.ReplyToMessage;
+        var repliedToText = (repliedToMessage?.Text
+                             ?? repliedToMessage?.Caption
+                             ?? PollToText(repliedToMessage?.Poll)
+                             ?? RichMessageToText(repliedToMessage?.RichMessage)
+                             ?? string.Empty)
+            .Trim();
+
+        return (repliedToText, false);
+    }
+
+    internal static string BuildRepliedToHeader(string repliedToAuthor, string? forwardSource, bool isQuotedFragment)
+    {
+        var subject = isQuotedFragment
+            ? $"Quoted Part of the Message by {repliedToAuthor}"
+            : $"Original Message by {repliedToAuthor}";
+
+        return forwardSource != null
+            ? $"--- {subject} (forwarded from {forwardSource}): ---"
+            : $"--- {subject}: ---";
+    }
+
     public async Task HandleMentionAsync(
         ITelegramBotClient botClient,
         Message updateMessage,
@@ -136,13 +171,8 @@ public sealed class MentionHandler
         // Remove the mention from the message
         messageText = messageText.Substring(currentMention.Length).TrimStart(',', ' ', '.', '!', '?', ':', ';').Trim();
 
-        // Check for replied-to message text
-        var repliedToMessageText = (updateMessage.ReplyToMessage?.Text
-                                    ?? updateMessage.ReplyToMessage?.Caption
-                                    ?? PollToText(updateMessage.ReplyToMessage?.Poll)
-                                    ?? RichMessageToText(updateMessage.ReplyToMessage?.RichMessage)
-                                    ?? string.Empty)
-            .Trim();
+        // Check for replied-to message text (only the quoted part when the user quoted one)
+        var (repliedToMessageText, isQuotedFragment) = ResolveRepliedToText(updateMessage);
 
         // Only exit early if both message and replied-to message are empty
         if (string.IsNullOrEmpty(messageText) && string.IsNullOrEmpty(repliedToMessageText))
@@ -157,37 +187,32 @@ public sealed class MentionHandler
         string fullMessageToLlm;
         string originalMessageLogInfo = string.Empty;
 
-        if (updateMessage.ReplyToMessage != null)
+        // repliedToMessageText was already computed above (incl. quote/Poll/RichMessage fallbacks) — reuse it here.
+        // A quote can also arrive without ReplyToMessage, e.g. when replying to a message of another chat.
+        if (!string.IsNullOrEmpty(repliedToMessageText))
         {
-            // repliedToMessageText was already computed above (incl. Poll/RichMessage fallbacks) — reuse it here.
-            if (!string.IsNullOrEmpty(repliedToMessageText))
+            var repliedToFrom = updateMessage.ReplyToMessage?.From;
+            var repliedToAuthor = repliedToFrom?.Username ??
+                                  string.Join(' ', repliedToFrom?.FirstName, repliedToFrom?.LastName).Trim();
+            if (string.IsNullOrWhiteSpace(repliedToAuthor))
             {
-                var repliedToAuthor = updateMessage.ReplyToMessage.From?.Username ??
-                                      string.Join(' ', updateMessage.ReplyToMessage.From?.FirstName, updateMessage.ReplyToMessage.From?.LastName).Trim();
-                if (string.IsNullOrWhiteSpace(repliedToAuthor))
-                {
-                    repliedToAuthor = "Original Poster"; // Fallback if author is not available
-                }
-
-                // If the replied-to message is itself a forward, surface its original source to the LLM
-                var forwardSource = DescribeForwardOrigin(updateMessage.ReplyToMessage.ForwardOrigin);
-                var originalMessageHeader = forwardSource != null
-                    ? $"--- Original Message by {repliedToAuthor} (forwarded from {forwardSource}): ---"
-                    : $"--- Original Message by {repliedToAuthor}: ---";
-
-                fullMessageToLlm = $"{author} (replying to {repliedToAuthor}): {messageText}\n\n{originalMessageHeader}\n{repliedToMessageText}";
-                originalMessageLogInfo = forwardSource != null
-                    ? $" | Original by {repliedToAuthor} (forwarded from {forwardSource}): \"{repliedToMessageText.Cut(50)}\"" // Cut for brevity in logs
-                    : $" | Original by {repliedToAuthor}: \"{repliedToMessageText.Cut(50)}\""; // Cut for brevity in logs
+                repliedToAuthor = "Original Poster"; // Fallback if author is not available
             }
-            else
-            {
-                fullMessageToLlm = $"{author}: {messageText}"; // ReplyToMessage exists but has no text/caption
-            }
+
+            // If the replied-to message is itself a forward, surface its original source to the LLM
+            var forwardSource = DescribeForwardOrigin(updateMessage.ReplyToMessage?.ForwardOrigin);
+            var originalMessageHeader = BuildRepliedToHeader(repliedToAuthor, forwardSource, isQuotedFragment);
+
+            fullMessageToLlm = $"{author} (replying to {repliedToAuthor}): {messageText}\n\n{originalMessageHeader}\n{repliedToMessageText}";
+
+            var logSubject = isQuotedFragment ? "Quoted part by" : "Original by";
+            originalMessageLogInfo = forwardSource != null
+                ? $" | {logSubject} {repliedToAuthor} (forwarded from {forwardSource}): \"{repliedToMessageText.Cut(50)}\"" // Cut for brevity in logs
+                : $" | {logSubject} {repliedToAuthor}: \"{repliedToMessageText.Cut(50)}\""; // Cut for brevity in logs
         }
         else
         {
-            fullMessageToLlm = $"{author}: {messageText}"; // Not a reply
+            fullMessageToLlm = $"{author}: {messageText}"; // Not a reply, or the replied-to message has no text/caption
         }
 
         _logger.LogInformation("Processing prompt from {Author} (lang={LanguageCode}): \"{UserMessage}\"{OriginalMessageLog}",
