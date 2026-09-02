@@ -16,6 +16,8 @@ namespace Pacos.Services.ChatCommandHandlers;
 
 public sealed class MentionHandler
 {
+    private const string UnknownRepliedToAuthor = "Original Poster";
+
     private readonly ILogger<MentionHandler> _logger;
     private readonly RankedLanguageIdentifier _rankedLanguageIdentifier;
     private readonly ChatService _chatService;
@@ -43,10 +45,10 @@ public sealed class MentionHandler
     }
 
     /// <summary>
-    /// Produces a human-readable description of where a forwarded message originally came from,
-    /// or <c>null</c> if the message is not a forward (or the origin type is unsupported).
+    /// Produces a human-readable description of where a message originally came from, or
+    /// <c>null</c> if there is no origin (or the origin type is unsupported).
     /// </summary>
-    private static string? DescribeForwardOrigin(MessageOrigin? origin) => origin switch
+    private static string? DescribeMessageOrigin(MessageOrigin? origin) => origin switch
     {
         MessageOriginUser user => DescribeUser(user.SenderUser),
         MessageOriginHiddenUser hiddenUser => string.IsNullOrWhiteSpace(hiddenUser.SenderUserName)
@@ -148,6 +150,27 @@ public sealed class MentionHandler
         return (repliedToText, false);
     }
 
+    /// <summary>
+    /// Resolves who wrote the replied-to message and, when that message is itself a forward, the
+    /// source it was forwarded from. A reply to a message of another chat carries no author field:
+    /// everything known about it arrives in <see cref="Message.ExternalReply"/>, whose origin
+    /// already names the author.
+    /// </summary>
+    internal static (string Author, string? ForwardSource) ResolveRepliedToAuthor(Message updateMessage)
+    {
+        if (updateMessage.ReplyToMessage is { } repliedToMessage)
+        {
+            var from = repliedToMessage.From;
+            var author = from?.Username ?? string.Join(' ', from?.FirstName, from?.LastName).Trim();
+
+            return (
+                string.IsNullOrWhiteSpace(author) ? UnknownRepliedToAuthor : author,
+                DescribeMessageOrigin(repliedToMessage.ForwardOrigin));
+        }
+
+        return (DescribeMessageOrigin(updateMessage.ExternalReply?.Origin) ?? UnknownRepliedToAuthor, null);
+    }
+
     internal static string BuildRepliedToHeader(string repliedToAuthor, string? forwardSource, bool isQuotedFragment)
     {
         var subject = isQuotedFragment
@@ -191,16 +214,8 @@ public sealed class MentionHandler
         // A quote can also arrive without ReplyToMessage, e.g. when replying to a message of another chat.
         if (!string.IsNullOrEmpty(repliedToMessageText))
         {
-            var repliedToFrom = updateMessage.ReplyToMessage?.From;
-            var repliedToAuthor = repliedToFrom?.Username ??
-                                  string.Join(' ', repliedToFrom?.FirstName, repliedToFrom?.LastName).Trim();
-            if (string.IsNullOrWhiteSpace(repliedToAuthor))
-            {
-                repliedToAuthor = "Original Poster"; // Fallback if author is not available
-            }
-
             // If the replied-to message is itself a forward, surface its original source to the LLM
-            var forwardSource = DescribeForwardOrigin(updateMessage.ReplyToMessage?.ForwardOrigin);
+            var (repliedToAuthor, forwardSource) = ResolveRepliedToAuthor(updateMessage);
             var originalMessageHeader = BuildRepliedToHeader(repliedToAuthor, forwardSource, isQuotedFragment);
 
             fullMessageToLlm = $"{author} (replying to {repliedToAuthor}): {messageText}\n\n{originalMessageHeader}\n{repliedToMessageText}";

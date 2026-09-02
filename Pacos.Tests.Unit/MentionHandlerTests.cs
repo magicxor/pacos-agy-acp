@@ -1,5 +1,6 @@
 using Pacos.Services.ChatCommandHandlers;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace Pacos.Tests.Unit;
 
@@ -146,6 +147,135 @@ internal sealed class MentionHandlerTests
         {
             Assert.That(text, Is.Empty);
             Assert.That(isQuotedFragment, Is.False);
+        });
+    }
+
+    [Test]
+    public void ResolveRepliedToAuthor_WhenRepliedToMessageHasUsername_ShouldUseIt()
+    {
+        var updateMessage = new Message
+        {
+            ReplyToMessage = new Message
+            {
+                From = new User { Id = 1, FirstName = "Bob", LastName = "Smith", Username = "bob", },
+            },
+        };
+
+        var (repliedToAuthor, forwardSource) = MentionHandler.ResolveRepliedToAuthor(updateMessage);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(repliedToAuthor, Is.EqualTo("bob"));
+            Assert.That(forwardSource, Is.Null);
+        });
+    }
+
+    [Test]
+    public void ResolveRepliedToAuthor_WhenRepliedToMessageHasNoUsername_ShouldUseFullName()
+    {
+        var updateMessage = new Message
+        {
+            ReplyToMessage = new Message { From = new User { Id = 1, FirstName = "Bob", LastName = "Smith", }, },
+        };
+
+        var (repliedToAuthor, _) = MentionHandler.ResolveRepliedToAuthor(updateMessage);
+
+        Assert.That(repliedToAuthor, Is.EqualTo("Bob Smith"));
+    }
+
+    [Test]
+    public void ResolveRepliedToAuthor_WhenRepliedToMessageIsForwarded_ShouldReturnForwardSource()
+    {
+        var updateMessage = new Message
+        {
+            ReplyToMessage = new Message
+            {
+                From = new User { Id = 1, FirstName = "Bob", Username = "bob", },
+                ForwardOrigin = new MessageOriginChannel
+                {
+                    Chat = new Chat { Id = -100, Type = ChatType.Channel, Title = "News", },
+                    MessageId = 7,
+                },
+            },
+        };
+
+        var (repliedToAuthor, forwardSource) = MentionHandler.ResolveRepliedToAuthor(updateMessage);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(repliedToAuthor, Is.EqualTo("bob"));
+            Assert.That(forwardSource, Is.EqualTo("channel \"News\""));
+        });
+    }
+
+    [Test]
+    public void ResolveRepliedToAuthor_WhenRepliedToMessageHasNoSender_ShouldFallBackToUnknownAuthor()
+    {
+        var (repliedToAuthor, forwardSource) = MentionHandler.ResolveRepliedToAuthor(new Message { ReplyToMessage = new Message(), });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(repliedToAuthor, Is.EqualTo("Original Poster"));
+            Assert.That(forwardSource, Is.Null);
+        });
+    }
+
+    [Test]
+    public void ResolveRepliedToAuthor_WhenExternalReplyFromUser_ShouldUseOriginUser()
+    {
+        var updateMessage = new Message
+        {
+            Quote = new TextQuote { Text = "часть чужого сообщения", },
+            ExternalReply = new ExternalReplyInfo
+            {
+                Origin = new MessageOriginUser { SenderUser = new User { Id = 1, FirstName = "Bob", Username = "bob", }, },
+            },
+        };
+
+        var (repliedToAuthor, forwardSource) = MentionHandler.ResolveRepliedToAuthor(updateMessage);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(repliedToAuthor, Is.EqualTo("user bob"));
+            Assert.That(forwardSource, Is.Null);
+        });
+    }
+
+    [Test]
+    public void ResolveRepliedToAuthor_WhenExternalReplyFromChannel_ShouldUseOriginChannel()
+    {
+        var updateMessage = new Message
+        {
+            Quote = new TextQuote { Text = "часть поста", },
+            ExternalReply = new ExternalReplyInfo
+            {
+                Origin = new MessageOriginChannel
+                {
+                    Chat = new Chat { Id = -100, Type = ChatType.Channel, Title = "News", },
+                    MessageId = 7,
+                    AuthorSignature = "Editor",
+                },
+            },
+        };
+
+        var (repliedToAuthor, forwardSource) = MentionHandler.ResolveRepliedToAuthor(updateMessage);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(repliedToAuthor, Is.EqualTo("channel \"News\" (Editor)"));
+            Assert.That(forwardSource, Is.Null);
+        });
+    }
+
+    [Test]
+    public void ResolveRepliedToAuthor_WhenNotAReply_ShouldFallBackToUnknownAuthor()
+    {
+        var (repliedToAuthor, forwardSource) = MentionHandler.ResolveRepliedToAuthor(new Message { Text = "@pacos привет", });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(repliedToAuthor, Is.EqualTo("Original Poster"));
+            Assert.That(forwardSource, Is.Null);
         });
     }
 
