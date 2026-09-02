@@ -30,7 +30,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install agy (Google Antigravity CLI) — pinned to a known-good version
-ENV AGY_VERSION=1.1.6
+ENV AGY_VERSION=1.1.23
 RUN ARCH=$(dpkg --print-architecture) && \
     case "$ARCH" in \
       amd64) ASSET="agy_cli_linux_x64.tar.gz" ;; \
@@ -121,7 +121,7 @@ RUN mkdir -p /opt/quickchart-mcp && \
 # injects into each chat's agy-acp process. What IS emptied is the baked-in BaseUrl, which points
 # at localhost and is never right inside this container: fail-closed, so a missing env override
 # stops the server at startup instead of failing every tool call with a connection error.
-ENV MOVIEADVISOR_MCP_VERSION=0.0.0-alpha.1
+ENV MOVIEADVISOR_MCP_VERSION=0.0.0-alpha.2
 RUN mkdir -p /opt/movieadvisor-mcp && \
     curl -fsSL "https://github.com/magicxor/MovieAdvisor/releases/download/${MOVIEADVISOR_MCP_VERSION}/MovieAdvisor.McpServer-${MOVIEADVISOR_MCP_VERSION}.tar.gz" \
       | tar -xz -C /opt/movieadvisor-mcp && \
