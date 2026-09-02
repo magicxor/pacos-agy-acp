@@ -133,8 +133,8 @@ public sealed class MentionHandler
     /// </summary>
     internal static (string Text, bool IsQuotedFragment) ResolveRepliedToText(Message updateMessage)
     {
-        var quotedFragment = updateMessage.Quote?.Text.Trim();
-        if (!string.IsNullOrEmpty(quotedFragment))
+        var quotedFragment = updateMessage.GetQuotedFragment();
+        if (quotedFragment is not null)
         {
             return (quotedFragment, true);
         }
