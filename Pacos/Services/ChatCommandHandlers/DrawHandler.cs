@@ -38,8 +38,10 @@ public sealed class DrawHandler
         _logger.LogInformation("Processing {Command} command from {Author} with prompt: {Prompt}", Const.DrawCommand, author, prompt);
 
         // A bare command replying to a message is a request to visualize that message,
-        // so its text counts as a prompt source too.
-        var repliedToMessageText = (updateMessage.ReplyToMessage?.Text
+        // so its text counts as a prompt source too. When the reply quotes only a part of that
+        // message, the quoted part alone is what should be visualized.
+        var repliedToMessageText = (updateMessage.GetQuotedFragment()
+                                    ?? updateMessage.ReplyToMessage?.Text
                                     ?? updateMessage.ReplyToMessage?.Caption
                                     ?? updateMessage.ReplyToMessage?.RichMessage.GetPlainText()
                                     ?? string.Empty)
