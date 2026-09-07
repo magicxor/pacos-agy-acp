@@ -143,16 +143,16 @@ public sealed class OutputFileSender
 
     private static bool ExceedsUploadLimit(OutputFile file) => file.Content.Length > Const.MaxTelegramFileSizeBytes;
 
-    // A photo must be downscaled when it is too large in bytes, or when its
-    // width + height exceeds Telegram's photo semiperimeter limit (which can happen
-    // well under the byte limit). FitWithinBounds fits it inside 2560x2560, which
-    // also flattens an animated GIF/WebP to a static JPEG.
+    // A photo must be downscaled when it is too large in bytes, or when its longer
+    // side exceeds MaxTelegramPhotoMaxDimension: Telegram would otherwise shrink it
+    // itself with a visibly worse resampler. FitWithinBounds also flattens an
+    // animated GIF/WebP to a static JPEG.
     private static bool NeedsDownscaling(
         OutputFile file,
         IReadOnlyDictionary<OutputFile, (int Width, int Height)> imageDimensions) =>
         file.Content.Length > Const.MaxTelegramPhotoSizeBytes
         || (imageDimensions.TryGetValue(file, out var dimensions)
-            && ImageDownscaler.ExceedsSemiperimeter(dimensions.Width, dimensions.Height, Const.MaxTelegramPhotoSemiperimeter));
+            && ImageDownscaler.ExceedsMaxDimension(dimensions.Width, dimensions.Height, Const.MaxTelegramPhotoMaxDimension));
 
     private static IAlbumInputMedia CreateAlbumMedia(PlannedMedia item, InputFile inputFile, string? caption)
     {
@@ -306,8 +306,8 @@ public sealed class OutputFileSender
 
     // Extreme-aspect images are routed to the document group and never reach this
     // method, so they are always sent full-resolution: downscaling them cannot make
-    // them a valid photo (2560x2560 preserves the aspect ratio) and would only
-    // discard detail.
+    // them a valid photo (fitting inside the MaxTelegramPhotoMaxDimension square
+    // preserves the aspect ratio) and would only discard detail.
     private PlannedMedia DownscaleIfOversized(
         PlannedMedia item,
         IReadOnlyDictionary<OutputFile, (int Width, int Height)> imageDimensions) =>
