@@ -68,6 +68,28 @@ internal sealed class ImageDownscalerTests
     }
 
     [Test]
+    public void FitWithinBounds_WhenShrinkingByMoreThanTwo_ShouldDownscaleWithoutAliasing()
+    {
+        // Alternating 1px black/white columns average to a flat mid-grey when properly
+        // filtered; a resampler that skips source pixels produces moiré instead.
+        var file = new OutputFile("stripes.png", CreateStripedImage(6400, 640));
+
+        var result = CreateDownscaler().FitWithinBounds(file);
+        using var bitmap = SKBitmap.Decode(result.Content);
+        var rows = new[] { 0, bitmap.Height / 2, bitmap.Height - 1, };
+        var samples = rows
+            .SelectMany(y => Enumerable.Range(0, bitmap.Width).Select(x => (int)bitmap.GetPixel(x, y).Red))
+            .ToList();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(bitmap.Width, Is.EqualTo(2560));
+            Assert.That(bitmap.Height, Is.EqualTo(256));
+            Assert.That(samples, Has.All.InRange(112, 144));
+        }
+    }
+
+    [Test]
     public void FitWithinBounds_WhenImageWithinMaxDimension_ShouldNotUpscale()
     {
         var file = new OutputFile("small.png", CreateImage(800, 600, SKEncodedImageFormat.Png));
@@ -110,19 +132,21 @@ internal sealed class ImageDownscalerTests
         Assert.That(ImageDownscaler.ExceedsAspectRatioLimit(width, height, maxAspectRatio), Is.EqualTo(expected));
     }
 
-    [TestCase(5000, 5000, 10000, false)]
-    [TestCase(5000, 5001, 10000, true)]
-    [TestCase(9999, 1, 10000, false)]
-    [TestCase(10000, 1, 10000, true)]
-    [TestCase(0, 0, 10000, false)]
-    [TestCase(int.MaxValue, int.MaxValue, 10000, true)]
-    public void ExceedsSemiperimeter_ShouldDetectImagesAboveTheLimit(
+    [TestCase(2560, 2560, 2560, false)]
+    [TestCase(2561, 100, 2560, true)]
+    [TestCase(100, 2561, 2560, true)]
+    [TestCase(1000, 800, 2560, false)]
+    [TestCase(0, 3000, 2560, false)]
+    [TestCase(3000, 0, 2560, false)]
+    [TestCase(-5, 3000, 2560, false)]
+    [TestCase(int.MaxValue, 1, 2560, true)]
+    public void ExceedsMaxDimension_ShouldDetectImagesWithALongerSideAboveTheLimit(
         int width,
         int height,
-        int maxSemiperimeter,
+        int maxDimension,
         bool expected)
     {
-        Assert.That(ImageDownscaler.ExceedsSemiperimeter(width, height, maxSemiperimeter), Is.EqualTo(expected));
+        Assert.That(ImageDownscaler.ExceedsMaxDimension(width, height, maxDimension), Is.EqualTo(expected));
     }
 
     [TestCase(SKEncodedImageFormat.Png)]
@@ -153,6 +177,26 @@ internal sealed class ImageDownscalerTests
         using var bitmap = new SKBitmap(width, height);
         bitmap.Erase(SKColors.CornflowerBlue);
 
+        return Encode(bitmap, format);
+    }
+
+    private static byte[] CreateStripedImage(int width, int height)
+    {
+        using var bitmap = new SKBitmap(width, height);
+        bitmap.Erase(SKColors.White);
+
+        using var canvas = new SKCanvas(bitmap);
+        using var paint = new SKPaint { Color = SKColors.Black, };
+        for (var x = 0; x < width; x += 2)
+        {
+            canvas.DrawRect(x, 0, 1, height, paint);
+        }
+
+        return Encode(bitmap, SKEncodedImageFormat.Png);
+    }
+
+    private static byte[] Encode(SKBitmap bitmap, SKEncodedImageFormat format)
+    {
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(format, 100);
         if (data is null)

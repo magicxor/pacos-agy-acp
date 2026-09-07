@@ -1,23 +1,32 @@
+using Pacos.Constants;
 using Pacos.Models;
 using SkiaSharp;
 
 namespace Pacos.Services.ImageConversion;
 
 /// <summary>
-/// Shrinks over-sized images so they fit within Telegram's photo upload limit:
-/// the picture is scaled to fit inside a <see cref="MaxDimension"/>×<see cref="MaxDimension"/>
-/// square (aspect ratio preserved, never upscaled) and re-encoded as JPEG.
-/// Re-encoding drops any alpha channel and flattens animated images to their
-/// first frame, both acceptable since these files are already delivered as
-/// static photos. The transform is best-effort: undecodable input is returned
-/// unchanged rather than throwing into the send path.
+/// Shrinks over-sized images before they are uploaded to Telegram as photos.
+/// Telegram re-scales any photo whose longer side exceeds
+/// <see cref="Const.MaxTelegramPhotoMaxDimension"/> pixels on its own, with a
+/// low-quality resampler that leaves visible aliasing, so the picture is scaled
+/// here instead: it is fitted inside a <see cref="Const.MaxTelegramPhotoMaxDimension"/>
+/// square (aspect ratio preserved, never upscaled), which also keeps it well under
+/// Telegram's width + height hard limit, and re-encoded as JPEG. Re-encoding drops
+/// any alpha channel and flattens animated images to their first frame, both
+/// acceptable since these files are already delivered as static photos. The
+/// transform is best-effort: undecodable input is returned unchanged rather than
+/// throwing into the send path.
 /// </summary>
 public sealed class ImageDownscaler
 {
-    private const int MaxDimension = 2560;
     private const int JpegQuality = 90;
 
-    private static readonly SKSamplingOptions Sampling = new(SKCubicResampler.Mitchell);
+    // Skia's cubic resampler only looks at a 4×4 neighbourhood, so shrinking by more
+    // than 2× in a single pass skips source pixels and aliases. Bilinear sampling at
+    // exactly ½ scale averages each 2×2 block (a box filter), which makes repeated
+    // halving a clean anti-aliasing pre-pass before the final cubic resize.
+    private static readonly SKSamplingOptions HalvingSampling = new(SKFilterMode.Linear, SKMipmapMode.None);
+    private static readonly SKSamplingOptions FinalSampling = new(SKCubicResampler.Mitchell);
 
     private readonly ILogger<ImageDownscaler> _logger;
 
@@ -28,8 +37,8 @@ public sealed class ImageDownscaler
 
     /// <summary>
     /// Returns a JPEG-encoded copy of <paramref name="file"/> that fits inside the
-    /// <see cref="MaxDimension"/> square, or the original file when it cannot be
-    /// decoded or encoded.
+    /// <see cref="Const.MaxTelegramPhotoMaxDimension"/> square, or the original file
+    /// when it cannot be decoded, resized or encoded.
     /// </summary>
     public OutputFile FitWithinBounds(OutputFile file)
     {
@@ -42,14 +51,23 @@ public sealed class ImageDownscaler
                 return file;
             }
 
-            var (targetWidth, targetHeight) = ComputeTargetDimensions(decoded.Width, decoded.Height, MaxDimension);
+            var (targetWidth, targetHeight) = ComputeTargetDimensions(decoded.Width, decoded.Height, Const.MaxTelegramPhotoMaxDimension);
 
             SKBitmap? resized = null;
             try
             {
                 if (targetWidth != decoded.Width || targetHeight != decoded.Height)
                 {
-                    resized = decoded.Resize(decoded.Info.WithSize(targetWidth, targetHeight), Sampling);
+                    resized = Resize(decoded, targetWidth, targetHeight);
+                    if (resized is null)
+                    {
+                        _logger.LogWarning(
+                            "Could not resize {FileName} to {TargetWidth}x{TargetHeight}; sending it unchanged",
+                            file.FileName,
+                            targetWidth,
+                            targetHeight);
+                        return file;
+                    }
                 }
 
                 using var image = SKImage.FromBitmap(resized ?? decoded);
@@ -146,12 +164,48 @@ public sealed class ImageDownscaler
         && Math.Max(width, height) > (long)Math.Min(width, height) * maxAspectRatio;
 
     /// <summary>
-    /// Returns whether the image's width + height exceeds Telegram's photo
-    /// semiperimeter limit, in which case the photo must be downscaled. Pure and
-    /// side-effect free.
+    /// Returns whether the image's longer side exceeds <paramref name="maxDimension"/>,
+    /// in which case Telegram would re-scale the photo itself and it must be
+    /// downscaled here first. Pure and side-effect free.
     /// </summary>
-    internal static bool ExceedsSemiperimeter(int width, int height, int maxSemiperimeter) =>
+    internal static bool ExceedsMaxDimension(int width, int height, int maxDimension) =>
         width > 0
         && height > 0
-        && (long)width + height > maxSemiperimeter;
+        && Math.Max(width, height) > maxDimension;
+
+    // Halves the bitmap with a box filter until one more halving would undershoot
+    // the target, then finishes with a single cubic pass. Returns null when Skia
+    // fails to allocate or resample at any step.
+    private static SKBitmap? Resize(SKBitmap source, int targetWidth, int targetHeight)
+    {
+        var current = source;
+        try
+        {
+            while (current.Width >= targetWidth * 2 && current.Height >= targetHeight * 2)
+            {
+                var halved = current.Resize(current.Info.WithSize(current.Width / 2, current.Height / 2), HalvingSampling);
+                if (halved is null)
+                {
+                    return null;
+                }
+
+                DisposeIntermediate(current, source);
+                current = halved;
+            }
+
+            return current.Resize(current.Info.WithSize(targetWidth, targetHeight), FinalSampling);
+        }
+        finally
+        {
+            DisposeIntermediate(current, source);
+        }
+    }
+
+    private static void DisposeIntermediate(SKBitmap bitmap, SKBitmap source)
+    {
+        if (!ReferenceEquals(bitmap, source))
+        {
+            bitmap.Dispose();
+        }
+    }
 }
