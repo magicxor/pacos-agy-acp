@@ -176,8 +176,8 @@ public sealed class PacosOptions
             },
         },
         // The only remote entry: web-search-plus-mcp (one web_search/web_extract pair over several
-        // search providers with automatic failover) runs in the websearch-mcp sidecar behind a
-        // supergateway stdio->Streamable HTTP bridge, and agy connects to it over the compose
+        // search providers with automatic failover) runs in the websearch-mcp sidecar behind an
+        // mcp-proxy stdio->Streamable HTTP bridge, and agy connects to it over the compose
         // network. agy infers the transport from serverUrl, so there is no command/args/env - and
         // deliberately no provider API keys: those live in the sidecar's environment, and the
         // provider order in websearch-mcp.config.json mounted into it (see docker-compose*.yml).
