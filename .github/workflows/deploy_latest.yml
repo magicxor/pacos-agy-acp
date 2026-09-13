@@ -85,7 +85,7 @@ jobs:
             # (Pacos__Crawl4AiApiToken), so the sidecar binds 0.0.0.0 and the MCP authenticates.
             export CRAWL4AI_API_TOKEN='${{ secrets.CRAWL4AI_API_TOKEN }}'
             # Web search provider API keys for the websearch-mcp sidecar (web-search-plus-mcp
-            # behind supergateway, see docker-compose.deploy.yml). All optional: a provider
+            # behind mcp-proxy, see docker-compose.deploy.yml). All optional: a provider
             # whose key is empty is skipped by the aggregator's auto-routing, so an unset secret
             # only shortens the failover chain instead of breaking the deploy.
             export EXA_API_KEY='${{ secrets.EXA_API_KEY }}'
