@@ -1,6 +1,5 @@
 using System.Text.Json.Nodes;
 using Pacos.Constants;
-using Pacos.Enums;
 using Pacos.Models;
 using Pacos.Models.Options;
 using Pacos.Services.Acp;
@@ -242,19 +241,50 @@ internal sealed class AgyMcpConfigTests
     }
 
     [Test]
-    public void BuildConfigJson_SseServer_EmitsLowercaseTypeAndUrl()
+    public void BuildConfigJson_DefaultWebSearchServer_MatchesAgyRemoteFormat()
+    {
+        var json = AgyMcpConfigHostedService.BuildConfigJson(CreateOptions().McpServers, WorkspaceRoot, BrainDir, ApiToken);
+        var websearch = GetServer(json, "websearch");
+
+        using (Assert.EnterMultipleScope())
+        {
+            // The aggregator sits in the websearch-mcp sidecar behind a stdio->Streamable HTTP
+            // gateway; agy reaches it over the internal compose network.
+            Assert.That(websearch["serverUrl"]?.GetValue<string>(), Is.EqualTo("http://websearch-mcp:8000/mcp"));
+
+            // agy's remote format is serverUrl (+ optional headers) only: no command/args/env, no
+            // "type" (the transport is inferred from the URL) and neither of the legacy url/httpUrl
+            // spellings, which agy rejects. The provider API keys must never end up in this file.
+            Assert.That(websearch.ContainsKey("command"), Is.False);
+            Assert.That(websearch.ContainsKey("args"), Is.False);
+            Assert.That(websearch.ContainsKey("env"), Is.False);
+            Assert.That(websearch.ContainsKey("headers"), Is.False);
+            Assert.That(websearch.ContainsKey("type"), Is.False);
+            Assert.That(websearch.ContainsKey("url"), Is.False);
+            Assert.That(websearch.ContainsKey("httpUrl"), Is.False);
+        }
+    }
+
+    [Test]
+    public void BuildConfigJson_RemoteServerWithHeaders_EmitsServerUrlAndHeadersOnly()
     {
         var servers = new Dictionary<string, McpServer>
         {
-            ["remote"] = new() { Type = ServerType.Sse, Url = "https://example.com/sse" },
+            ["remote"] = new()
+            {
+                ServerUrl = "https://example.com/mcp",
+                Headers = new Dictionary<string, string> { ["Authorization"] = "Bearer token" },
+            },
         };
 
         var remote = GetServer(AgyMcpConfigHostedService.BuildConfigJson(servers, WorkspaceRoot, BrainDir, ApiToken), "remote");
 
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(remote["type"]?.GetValue<string>(), Is.EqualTo("sse"));
-            Assert.That(remote["url"]?.GetValue<string>(), Is.EqualTo("https://example.com/sse"));
+            Assert.That(remote["serverUrl"]?.GetValue<string>(), Is.EqualTo("https://example.com/mcp"));
+            Assert.That(remote["headers"]?["Authorization"]?.GetValue<string>(), Is.EqualTo("Bearer token"));
+            Assert.That(remote.ContainsKey("type"), Is.False);
+            Assert.That(remote.ContainsKey("url"), Is.False);
             Assert.That(remote.ContainsKey("command"), Is.False);
         }
     }
