@@ -21,12 +21,12 @@ namespace Pacos.Services.Acp;
 ///
 /// Matching semantics (verified empirically against agy 1.1.4 headless runs):
 /// precedence is Deny &gt; Ask &gt; Allow; file rules are literal absolute paths that
-/// cover the whole subtree; <c>command(...)</c>/<c>unsandboxed(...)</c> targets are
+/// cover the whole subtree; <c>command(...)</c> targets are
 /// matched LITERALLY unless the target starts with <c>regex:</c>. A regex target is
 /// whitespace-tokenized, each token is an anchored RE2 regular expression
 /// (<c>^(?:token)$</c>) matched against the corresponding command token. This service
 /// no longer emits any per-command regex rules: all shell commands are denied via the
-/// <c>command(*)</c> and <c>unsandboxed(*)</c> wildcards (file delivery goes through the
+/// <c>command(*)</c> wildcard (file delivery goes through the
 /// filemcp MCP server, not the shell). That blanket deny also overrides agy's built-in
 /// default command grants (e.g. <c>command(cat)</c>) and protects against a future
 /// fail-open regression. The real isolation boundary is still the container (read-only
@@ -347,14 +347,14 @@ public sealed class AgySecurityPolicyHostedService : IHostedService
     {
         // "off" is a local-debugging escape hatch (agy default-allows commands). Every
         // other value, including the "denyall" default and any unknown value, denies all
-        // shell commands. agy treats command(...) and unsandboxed(...) as separate verbs,
-        // so both wildcards are required for a complete ban.
+        // shell commands. The unsandboxed(...) verb is deprecated since agy 1.2.2 (it
+        // warns on startup and asks for migration to command(...) rules), so the
+        // command(*) wildcard alone is the complete ban.
         if (_commandRuleMode == "off")
         {
             return;
         }
 
         deny.Add("command(*)");
-        deny.Add("unsandboxed(*)");
     }
 }

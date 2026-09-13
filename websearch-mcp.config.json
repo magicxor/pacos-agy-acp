@@ -1,0 +1,44 @@
+{
+  "defaults": {
+    "provider": "serper",
+    "max_results": 5
+  },
+  "auto_routing": {
+    "enabled": true,
+    "fallback_provider": "tavily",
+    "provider_priority": [
+      "exa",
+      "parallel",
+      "tavily",
+      "linkup",
+      "brave",
+      "firecrawl",
+      "you",
+      "serper",
+      "serpbase",
+      "querit",
+      "searxng",
+      "keenable"
+    ],
+    "extract_provider_priority": [
+      "exa",
+      "tavily",
+      "firecrawl",
+      "linkup",
+      "parallel",
+      "you",
+      "keenable",
+      "serper",
+      "donsetch"
+    ],
+    "disabled_providers": [],
+    "auto_allow": {
+      "serpbase": false,
+      "querit": false,
+      "donsetch": false,
+      "octen": false,
+      "tinyfish": false
+    },
+    "confidence_threshold": 0.3
+  }
+}

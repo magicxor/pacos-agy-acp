@@ -110,6 +110,7 @@ public sealed class PacosOptions
     /// so file-saving allow-lists always track <see cref="WorkingDirectoryRoot"/>.
     /// </summary>
     [SuppressMessage("Minor Vulnerability", "S5332:Clear-text protocols should not be used", Justification = "Plain http is intentional: container-to-container traffic on the internal compose network")]
+    [SuppressMessage("Major Code Smell", "S1075:URIs should not be hardcoded", Justification = "Container-to-container address on the internal compose network: this is the wiring between services, not an environment-specific setting")]
     public Dictionary<string, McpServer> McpServers { get; set; } = new()
     {
         ["gallerydl"] = new McpServer
@@ -174,14 +175,24 @@ public sealed class PacosOptions
                 ["MovieAdvisorApi__BaseUrl"] = "http://movieadvisor-api:8080",
             },
         },
+        // The only remote entry: web-search-plus-mcp (one web_search/web_extract pair over several
+        // search providers with automatic failover) runs in the websearch-mcp sidecar behind an
+        // mcp-proxy stdio->Streamable HTTP bridge, and agy connects to it over the compose
+        // network. agy infers the transport from serverUrl, so there is no command/args/env - and
+        // deliberately no provider API keys: those live in the sidecar's environment, and the
+        // provider order in websearch-mcp.config.json mounted into it (see docker-compose*.yml).
+        ["websearch"] = new McpServer
+        {
+            ServerUrl = "http://websearch-mcp:8000/mcp",
+        },
     };
 
     /// <summary>
     /// Which set of agy command-permission rules to write into settings.json.
     /// Accepted values (case-insensitive):
     /// <list type="bullet">
-    /// <item><c>denyall</c> (default) — block every shell command by denying both the
-    /// <c>command(*)</c> and <c>unsandboxed(*)</c> verbs. The agent has no legitimate
+    /// <item><c>denyall</c> (default) — block every shell command by denying the
+    /// <c>command(*)</c> verb. The agent has no legitimate
     /// use for the shell: file delivery goes through the filemcp MCP server.</item>
     /// <item><c>off</c> — no command rules at all (agy default-allows commands). For
     /// local debugging only.</item>

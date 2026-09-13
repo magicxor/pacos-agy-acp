@@ -414,3 +414,6 @@ FodyWeavers.xsd
 Pacos/appsettings.json
 Pacos/banwords.txt
 Pacos/mcp.json
+
+# Local docker compose secrets: web search provider API keys for the websearch-mcp sidecar.
+.env
