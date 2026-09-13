@@ -180,8 +180,8 @@ public sealed class PacosOptions
     /// Which set of agy command-permission rules to write into settings.json.
     /// Accepted values (case-insensitive):
     /// <list type="bullet">
-    /// <item><c>denyall</c> (default) — block every shell command by denying both the
-    /// <c>command(*)</c> and <c>unsandboxed(*)</c> verbs. The agent has no legitimate
+    /// <item><c>denyall</c> (default) — block every shell command by denying the
+    /// <c>command(*)</c> verb. The agent has no legitimate
     /// use for the shell: file delivery goes through the filemcp MCP server.</item>
     /// <item><c>off</c> — no command rules at all (agy default-allows commands). For
     /// local debugging only.</item>
