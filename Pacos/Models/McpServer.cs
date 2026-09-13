@@ -1,21 +1,18 @@
 using System.Text.Json.Serialization;
-using Pacos.Enums;
 
 namespace Pacos.Models;
 
 /// <summary>
 /// One entry of agy's <c>mcp_config.json</c> (<c>~/.gemini/config/mcp_config.json</c>).
-/// The observed on-disk format for stdio servers is just command/args/env — optional
-/// members are nullable so that unset ones disappear from the generated JSON
-/// (serialized with <c>WhenWritingNull</c>) and the file matches what agy itself writes.
+/// The observed on-disk format for stdio servers is just command/args/env; a remote
+/// (Streamable HTTP / SSE) server is <c>serverUrl</c> plus optional <c>headers</c>, with the
+/// transport inferred from the URL — agy has no <c>type</c> member and rejects the legacy
+/// <c>url</c> / <c>httpUrl</c> spellings. Optional members are nullable so that unset ones
+/// disappear from the generated JSON (serialized with <c>WhenWritingNull</c>) and the file
+/// matches what agy itself writes.
 /// </summary>
 public sealed class McpServer
 {
-    /// <summary>Omitted from JSON when <see cref="ServerType.Unspecified"/> — stdio servers are implied by <c>command</c>.</summary>
-    [JsonPropertyName("type")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public ServerType Type { get; set; }
-
     [JsonIgnore]
     public string? Name { get; set; }
 
@@ -31,8 +28,8 @@ public sealed class McpServer
     [JsonPropertyName("envFile")]
     public string? EnvFile { get; set; }
 
-    [JsonPropertyName("url")]
-    public string? Url { get; set; }
+    [JsonPropertyName("serverUrl")]
+    public string? ServerUrl { get; set; }
 
     [JsonPropertyName("headers")]
     public Dictionary<string, string>? Headers { get; set; }
