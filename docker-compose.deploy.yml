@@ -8,6 +8,7 @@
 #   CONTAINER_NAME     - stable bot container name, e.g. pacos2-production
 #   AGY_VOLUME_NAME    - pre-existing named volume with agy state, e.g. pacos_agy_acp_production
 #   PACOS__*           - bot configuration (secrets/vars), see deploy_latest.yml
+#   *_API_KEY          - web search provider keys for the websearch-mcp sidecar (all optional)
 services:
   pacos:
     image: ${PACOS_IMAGE}
@@ -41,6 +42,7 @@ services:
       - crawl4ai
       - quickchart
       - movieadvisor-api
+      - websearch-mcp
     networks:
       - pacos-net
 
@@ -110,6 +112,53 @@ services:
     networks:
       - pacos-net
 
+  # web-search-plus-mcp: one web_search/web_extract tool pair over several search providers
+  # (Exa, Parallel, Tavily, Linkup, Brave, Firecrawl) with automatic failover. Unlike the other
+  # MCP servers it is NOT spawned by agy inside the pacos container: the package is stdio-only,
+  # so supergateway (the :uvx image ships uv) bridges it to Streamable HTTP and agy connects to
+  # http://websearch-mcp:8000/mcp - the "websearch" serverUrl entry in PacosOptions.McpServers.
+  # Reachable only on the compose network - no published ports. The provider keys are plain
+  # environment variables exported by deploy_latest.yml from GitHub secrets; every one is
+  # optional, a provider without a key is skipped by the aggregator's auto-routing, so a
+  # missing secret only shortens the failover chain. The provider order and routing
+  # preferences are websearch-mcp.config.json, shipped next to this file by the deploy
+  # workflow and generated with `uvx web-search-plus-mcp==4.1.1 config --config-path ...`.
+  websearch-mcp:
+    image: supercorp/supergateway:3.4.3-uvx
+    container_name: ${CONTAINER_NAME}-websearch-mcp
+    restart: always
+    command:
+      - --stdio
+      - uvx web-search-plus-mcp==4.1.1 serve
+      - --outputTransport
+      - streamableHttp
+      - --port
+      - "8000"
+      - --healthEndpoint
+      - /healthz
+    environment:
+      - WEB_SEARCH_PLUS_CONFIG=/config/config.json
+      - EXA_API_KEY=${EXA_API_KEY}
+      - PARALLEL_API_KEY=${PARALLEL_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - LINKUP_API_KEY=${LINKUP_API_KEY}
+      - BRAVE_API_KEY=${BRAVE_API_KEY}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+    volumes:
+      - ./websearch-mcp.config.json:/config/config.json:ro
+      # uvx resolves the pinned package on every container start; the cache keeps restarts
+      # off PyPI (and working during a PyPI outage). Compose-managed, safe to lose.
+      - websearch-uv-cache:/root/.cache/uv
+    healthcheck:
+      # supergateway answers /healthz as soon as it listens; the image has wget, not curl.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - pacos-net
+
 networks:
   pacos-net:
 
@@ -123,3 +172,6 @@ volumes:
     # The movie API state (SQLite history + the cached Cineplex key). Unlike agy-state this one
     # is compose-managed: it is created on the first deploy and never pruned (the deploy workflow
     # deliberately prunes containers, networks and images only).
+  websearch-uv-cache:
+    # uv download cache for the websearch-mcp sidecar. Pure cache: losing it only costs one
+    # re-download of the pinned web-search-plus-mcp package on the next start.

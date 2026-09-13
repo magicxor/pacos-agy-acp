@@ -31,8 +31,6 @@ public sealed class AgyMcpConfigHostedService : IHostedService
     {
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        // agy expects lowercase transport names ("stdio", "sse").
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
         // Keep URLs with '&' human-readable instead of \uXXXX escapes.
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
@@ -127,7 +125,6 @@ public sealed class AgyMcpConfigHostedService : IHostedService
 
         return new McpServer
         {
-            Type = server.Type,
             Name = server.Name,
             Command = server.Command,
             Args = server.Args,
@@ -141,7 +138,7 @@ public sealed class AgyMcpConfigHostedService : IHostedService
                     .Replace(Const.BrainDirPlaceholder, brainPattern, StringComparison.Ordinal)
                     .Replace(Const.Crawl4AiApiTokenPlaceholder, crawl4aiApiToken, StringComparison.Ordinal)),
             EnvFile = server.EnvFile,
-            Url = server.Url,
+            ServerUrl = server.ServerUrl,
             Headers = server.Headers,
         };
     }

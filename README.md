@@ -14,6 +14,7 @@ Pacos is a .NET-based Telegram bot designed to interact in group chats. It drive
 - **AI-Powered Chat**: Responds to mentions (e.g., "pacos", "пакос") or direct messages by driving the agy agent over ACP. Each chat gets its own working directory holding a persona steering file (`AGENTS.md`) and a set of agy Agent Skills (`.agents/skills/<skill>/SKILL.md`) that carry the tool-specific instructions and are loaded on demand instead of on every turn.
 - **Image Generation**: Generate or modify images via the `!drawx <prompt>` command. An optional source image can be supplied with the command or by replying to a message that contains one.
 - **Movie Releases**: Answers "what is new in cinemas" per chat. The `movieadvisor` MCP server asks the `movieadvisor-api` sidecar which current releases this chat has not been offered yet; the sidecar refreshes the catalogue on its own daily schedule and remembers what it handed out, so nothing is suggested twice. The chat it answers for comes from `TELEGRAM_CHAT_ID`, injected per chat into the agent process — never from a tool argument the model could get wrong.
+- **Web Search**: The `websearch` MCP server hands the agent a single `web_search` / `web_extract` tool pair backed by several search providers (Exa, Parallel, Tavily, Linkup, Brave, Firecrawl) with automatic failover, instead of one tool per provider. It is [web-search-plus-mcp](https://github.com/robbyczgw-cla/web-search-plus-mcp) running in the `websearch-mcp` sidecar behind a [supergateway](https://github.com/supercorp-ai/supergateway) stdio-to-Streamable-HTTP bridge; agy reaches it via `serverUrl` over the compose network. Provider keys are the sidecar's environment variables (`EXA_API_KEY`, `PARALLEL_API_KEY`, `TAVILY_API_KEY`, `LINKUP_API_KEY`, `BRAVE_API_KEY`, `FIRECRAWL_API_KEY`; every one optional), the provider order and routing preferences are `websearch-mcp.config.json`.
 - **File Delivery**: The agent can return generated files (images, documents, etc.) by moving them into a per-turn output directory via the filemcp MCP server, which the bot then forwards back to the user.
 - **Chat Management**:
     - **Reset History**: Users can clear the agent's session for a specific chat with the `!resetx` command.
@@ -63,6 +64,8 @@ The bot reads its settings from environment variables or an `appsettings.json` f
     ```
 
 When running in Docker, the agy state directory (`/home/agent/.gemini`) should be backed by a named volume so the agent's OAuth credentials and state persist across deployments (see the deploy workflow). The `movieadvisor-api` sidecar keeps its SQLite database on the `movieadvisor-state` volume for the same reason: without it every chat's movie history resets on redeploy and the whole cinema line-up looks new again.
+
+For local development the web search provider keys go into a git-ignored `.env` file next to `docker-compose.yml` (`EXA_API_KEY=...`, one per line); in production the deploy workflow exports them from GitHub secrets of the same names. To change the provider order, regenerate `websearch-mcp.config.json` with the aggregator's own CLI and commit the result, e.g. `uvx web-search-plus-mcp==4.1.1 config --config-path websearch-mcp.config.json set-priority exa,parallel,tavily,linkup,brave,firecrawl`.
 
 ## Bot Commands
 
