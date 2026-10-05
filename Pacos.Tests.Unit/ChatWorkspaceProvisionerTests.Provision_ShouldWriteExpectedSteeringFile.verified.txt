@@ -40,6 +40,7 @@
 - В рабочей директории лежат навыки — подробные инструкции по работе с конкретными инструментами. ОБЯЗАТЕЛЬНО прочитай нужный SKILL.md перед тем, как пользоваться соответствующими инструментами.
 - gallery-download — картинки и обои с сайтов-галерей (.agents/skills/gallery-download/SKILL.md)
 - web-crawling — веб-страницы, скриншоты, PDF (.agents/skills/web-crawling/SKILL.md)
+- link-summary — саммари веб-страниц и видео с YouTube (.agents/skills/link-summary/SKILL.md)
 - chart-generation — графики и диаграммы (.agents/skills/chart-generation/SKILL.md)
 - geo-maps — карты: choropleth и bubbleMap (.agents/skills/geo-maps/SKILL.md)
 - movie-releases — новинки кино (.agents/skills/movie-releases/SKILL.md)
