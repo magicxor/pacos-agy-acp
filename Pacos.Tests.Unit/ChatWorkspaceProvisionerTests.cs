@@ -148,6 +148,7 @@ internal sealed class ChatWorkspaceProvisionerTests
 
     [TestCase("gallery-download")]
     [TestCase("web-crawling")]
+    [TestCase("link-summary")]
     [TestCase("chart-generation")]
     [TestCase("geo-maps")]
     [TestCase("movie-releases")]
