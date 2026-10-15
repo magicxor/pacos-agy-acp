@@ -160,15 +160,16 @@ class PcLnTab:
         (
             self.nfunc,
             _nfiles,
-            _header_text_start,
+            header_text_start,
             funcname_off,
             _cu_off,
             _filetab_off,
             _pctab_off,
             pcln_off,
         ) = struct.unpack_from("<8Q", data, base + 8)
-        # The header's textStart is a relocated pointer and reads as 0 in PIE binaries.
-        self.text_start = text_vaddr
+        # The header's textStart is a relocated pointer and reads as 0 in PIE binaries;
+        # only then fall back to the start of the .text section.
+        self.text_start = header_text_start or text_vaddr
         self.data = data
         self.funcname_base = base + funcname_off
         self.ftab_base = base + pcln_off
