@@ -33,4 +33,11 @@ public sealed class McpServer
 
     [JsonPropertyName("headers")]
     public Dictionary<string, string>? Headers { get; set; }
+
+    /// <summary>
+    /// How long agy waits for a single tool call to this server before failing it
+    /// ("MCP tool call to server ... timed out"). Unset keeps agy's default of 3 minutes.
+    /// </summary>
+    [JsonPropertyName("timeoutSeconds")]
+    public int? TimeoutSeconds { get; set; }
 }
