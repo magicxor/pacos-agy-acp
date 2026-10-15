@@ -8,6 +8,32 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release && r
 COPY agy-acp/src/ src/
 RUN touch src/main.rs && cargo build --release
 
+# --- Download agy (Google Antigravity CLI) and patch out the "server restart" notice ---
+# agy-acp runs `agy --conversation <id> -p ...` once per turn, and every resume makes agy append a
+# persistent "[Notice] All your subagents and background tasks have been stopped due to server
+# restart" system step to the conversation, bloating the model context by one copy per turn.
+# The patcher finds cortex.(*CascadeManager).sendRecoveryMessage by signature and turns it into a
+# no-op. It fails the build if the signature is not found, so re-check it on every AGY_VERSION bump.
+FROM python:3.13-slim-bookworm AS agy-patcher
+# agy (Google Antigravity CLI) — pinned to a known-good version
+ARG AGY_VERSION=1.3.5
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+RUN ARCH=$(dpkg --print-architecture) && \
+    case "$ARCH" in \
+      amd64) ASSET="agy_cli_linux_x64.tar.gz" ;; \
+      arm64) ASSET="agy_cli_linux_arm64.tar.gz" ;; \
+      *) echo "unsupported arch: $ARCH" && exit 1 ;; \
+    esac && \
+    mkdir /out && \
+    curl -fsSL "https://github.com/google-antigravity/antigravity-cli/releases/download/${AGY_VERSION}/${ASSET}" \
+      | tar -xz -C /out && \
+    mv /out/antigravity /out/agy && \
+    chmod +x /out/agy
+COPY Pacos/scripts/patch_agy_recovery_notice.py /tmp/patch_agy_recovery_notice.py
+RUN python /tmp/patch_agy_recovery_notice.py /out/agy
+
 # --- Build & publish the .NET bot ---
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
@@ -29,18 +55,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl jq tini procps ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install agy (Google Antigravity CLI) — pinned to a known-good version
-ENV AGY_VERSION=1.3.5
-RUN ARCH=$(dpkg --print-architecture) && \
-    case "$ARCH" in \
-      amd64) ASSET="agy_cli_linux_x64.tar.gz" ;; \
-      arm64) ASSET="agy_cli_linux_arm64.tar.gz" ;; \
-      *) echo "unsupported arch: $ARCH" && exit 1 ;; \
-    esac && \
-    curl -fsSL "https://github.com/google-antigravity/antigravity-cli/releases/download/${AGY_VERSION}/${ASSET}" \
-      | tar -xz -C /usr/local/bin && \
-    mv /usr/local/bin/antigravity /usr/local/bin/agy && \
-    chmod +x /usr/local/bin/agy
+# Install the patched agy built by the agy-patcher stage.
+COPY --from=agy-patcher /out/agy /usr/local/bin/agy
+RUN chmod +x /usr/local/bin/agy
 
 # The bot spawns `agy-acp`, which in turn spawns `agy`; both must be on PATH.
 COPY --from=adapter-builder /build/target/release/agy-acp /usr/local/bin/agy-acp
