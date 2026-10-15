@@ -140,6 +140,7 @@ public sealed class AgyMcpConfigHostedService : IHostedService
             EnvFile = server.EnvFile,
             ServerUrl = server.ServerUrl,
             Headers = server.Headers,
+            TimeoutSeconds = server.TimeoutSeconds,
         };
     }
 }

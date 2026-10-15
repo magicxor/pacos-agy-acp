@@ -71,6 +71,9 @@ internal sealed class AgyMcpConfigTests
             Assert.That(gallerydl.ContainsKey("headers"), Is.False);
             Assert.That(gallerydl.ContainsKey("envFile"), Is.False);
             Assert.That(gallerydl.ContainsKey("url"), Is.False);
+
+            // Downloads can legitimately be slow, so gallerydl keeps agy's default tool timeout.
+            Assert.That(gallerydl.ContainsKey("timeoutSeconds"), Is.False);
         }
     }
 
@@ -147,6 +150,11 @@ internal sealed class AgyMcpConfigTests
             Assert.That(
                 crawl4ai["env"]?.AsObject().ContainsKey("Crawl4Ai__AllowedOutputPatterns__1"),
                 Is.False);
+
+            // The server's HTTP timeout must fire before agy's per-server tool-call timeout so a
+            // hung page surfaces as a clean tool error instead of an agy-side abort.
+            Assert.That(crawl4ai["env"]?["Crawl4Ai__TimeoutSeconds"]?.GetValue<string>(), Is.EqualTo("45"));
+            Assert.That(crawl4ai["timeoutSeconds"]?.GetValue<int>(), Is.EqualTo(60));
 
             // agy's own on-disk format for stdio entries is bare command/args/env:
             // no "type", "headers", "envFile" or "url" members may appear.
@@ -251,6 +259,7 @@ internal sealed class AgyMcpConfigTests
             // The aggregator sits in the websearch-mcp sidecar behind a stdio->Streamable HTTP
             // gateway; agy reaches it over the internal compose network.
             Assert.That(websearch["serverUrl"]?.GetValue<string>(), Is.EqualTo("http://websearch-mcp:8000/mcp"));
+            Assert.That(websearch["timeoutSeconds"]?.GetValue<int>(), Is.EqualTo(60));
 
             // agy's remote format is serverUrl (+ optional headers) only: no command/args/env, no
             // "type" (the transport is inferred from the URL) and neither of the legacy url/httpUrl
