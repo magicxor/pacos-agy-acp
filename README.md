@@ -65,6 +65,8 @@ The bot reads its settings from environment variables or an `appsettings.json` f
 
 When running in Docker, the agy state directory (`/home/agent/.gemini`) should be backed by a named volume so the agent's OAuth credentials and state persist across deployments (see the deploy workflow). The `movieadvisor-api` sidecar keeps its SQLite database on the `movieadvisor-state` volume for the same reason: without it every chat's movie history resets on redeploy and the whole cinema line-up looks new again.
 
+The Docker image ships a patched `agy`: `Pacos/scripts/patch_agy_recovery_notice.py` (run in the `agy-patcher` stage of `Pacos/Dockerfile`) locates `cortex.(*CascadeManager).sendRecoveryMessage` in the Go binary by signature and turns it into a `ret`, so agy stops appending the "[Notice] All your subagents and background tasks have been stopped due to server restart" step to the context on every resumed turn. The build fails if the signature is not found; after bumping `AGY_VERSION` re-check the patcher (a failing image build is the signal).
+
 For local development the web search provider keys go into a git-ignored `.env` file next to `docker-compose.yml` (`EXA_API_KEY=...`, one per line); in production the deploy workflow exports them from GitHub secrets of the same names. To change the provider order, regenerate `websearch-mcp.config.json` with the aggregator's own CLI and commit the result, e.g. `uvx web-search-plus-mcp==4.1.1 config --config-path websearch-mcp.config.json set-priority exa,parallel,tavily,linkup,brave,firecrawl`.
 
 ## Bot Commands
