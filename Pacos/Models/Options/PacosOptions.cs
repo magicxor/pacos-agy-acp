@@ -142,10 +142,14 @@ public sealed class PacosOptions
         {
             Command = "dotnet",
             Args = ["/opt/crawl4ai-mcp/Crawl4AiMcp.dll"],
+            // A hung page must not eat the whole prompt budget: the server's own HTTP timeout
+            // fires first and returns a clean tool error, agy's timeout is only a backstop.
+            TimeoutSeconds = 60,
             Env = new Dictionary<string, string?>
             {
                 ["Crawl4Ai__BaseUrl"] = "http://crawl4ai:11235",
                 ["Crawl4Ai__ApiToken"] = Const.Crawl4AiApiTokenPlaceholder,
+                ["Crawl4Ai__TimeoutSeconds"] = "45",
                 ["Crawl4Ai__AllowedOutputPatterns__0"] =
                     $"^{Const.WorkspaceRootPatternPlaceholder}/[^/]+/\\.turns/[^/]+/(output|temp)(/.*)?$",
             },
@@ -184,6 +188,7 @@ public sealed class PacosOptions
         ["websearch"] = new McpServer
         {
             ServerUrl = "http://websearch-mcp:8000/mcp",
+            TimeoutSeconds = 60,
         },
     };
 

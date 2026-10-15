@@ -321,9 +321,25 @@ public sealed class AcpConnection : IAsyncDisposable
     {
         if (!root.TryGetProperty("params", out var parameters)
             || !parameters.TryGetProperty("update", out var update)
-            || !update.TryGetProperty("sessionUpdate", out var sessionUpdate)
-            || sessionUpdate.GetString() != "agent_message_chunk"
-            || !update.TryGetProperty("content", out var content)
+            || !update.TryGetProperty("sessionUpdate", out var sessionUpdate))
+        {
+            return;
+        }
+
+        switch (sessionUpdate.GetString())
+        {
+            case "agent_message_chunk":
+                AppendMessageChunk(update);
+                break;
+            case "tool_call":
+                LogToolCall(update);
+                break;
+        }
+    }
+
+    private void AppendMessageChunk(JsonElement update)
+    {
+        if (!update.TryGetProperty("content", out var content)
             || !content.TryGetProperty("text", out var textElement)
             || textElement.ValueKind != JsonValueKind.String)
         {
@@ -340,6 +356,15 @@ public sealed class AcpConnection : IAsyncDisposable
         {
             _notificationBuffer.Append(text);
         }
+    }
+
+    private void LogToolCall(JsonElement update)
+    {
+        var title = update.TryGetProperty("title", out var titleElement) && titleElement.ValueKind == JsonValueKind.String
+            ? titleElement.GetString()
+            : null;
+
+        _logger.LogDebug("agy tool call in '{WorkingDir}': {Title}", _workingDir, title ?? "(untitled)");
     }
 
     private void OnStderrLine(string line)
