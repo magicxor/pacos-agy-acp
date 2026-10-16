@@ -57,8 +57,11 @@ public sealed class PacosOptions
 
     /// <summary>
     /// Extra arguments forwarded to every underlying <c>agy</c> invocation via the
-    /// <c>AGY_EXTRA_ARGS</c> environment variable (whitespace separated).
+    /// <c>AGY_EXTRA_ARGS</c> environment variable (whitespace separated). Must not contain
+    /// <c>--print-timeout</c>: the turn deadlines are all derived from
+    /// <see cref="PromptTimeoutSeconds"/>, and an override would reorder them.
     /// </summary>
+    [RegularExpression("(?s)(?!.*--print-timeout).*", ErrorMessage = "AgyExtraArgs must not contain --print-timeout; set PromptTimeoutSeconds instead.")]
     public string? AgyExtraArgs { get; set; }
 
     /// <summary>
@@ -81,9 +84,10 @@ public sealed class PacosOptions
     public string? Crawl4AiApiToken { get; set; }
 
     /// <summary>
-    /// Hard timeout (in seconds) for a single prompt round-trip to agy-acp.
-    /// Also forwarded to agy as <c>--print-timeout</c> so the CLI's own headless
-    /// timeout (default 5m) never undercuts this value.
+    /// Budget (in seconds) for a single agent turn. agy-acp ends a turn that runs this long
+    /// and reports it as timed out; agy's <c>--print-timeout</c> and the Pacos
+    /// <c>session/prompt</c> watchdog are derived from it with increasing margins (see
+    /// <see cref="Services.Acp.AgyTurnTimeouts"/>).
     /// </summary>
     [Range(1, 3600)]
     public int PromptTimeoutSeconds { get; set; } = 300;

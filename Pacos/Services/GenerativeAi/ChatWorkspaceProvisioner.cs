@@ -10,14 +10,17 @@ namespace Pacos.Services.GenerativeAi;
 /// at the session working directory, and the Agent Skills under <c>.agents/skills</c> that
 /// agy discovers there and activates on demand from their frontmatter description.
 ///
-/// The steering file is written once (its trailing session-start stamp must not drift from
-/// turn to turn), while the skills are rewritten — and skills no longer listed in
-/// <see cref="AgentSkills"/> deleted — on every provisioning, so the catalog stays the single
-/// source of truth even in chats provisioned by an earlier release.
+/// The steering file is regenerated on every provisioning but keeps the session-start stamp
+/// it was first written with (the stamp must not drift from turn to turn), so chats
+/// provisioned by an earlier release pick up current instructions; an unchanged file is not
+/// touched. The skills are rewritten — and skills no longer listed in <see cref="AgentSkills"/>
+/// deleted — on every provisioning, so the catalog stays the single source of truth.
 /// </summary>
 public sealed class ChatWorkspaceProvisioner
 {
     private const string SteeringFileName = "AGENTS.md";
+    private const string SessionStartPrefix = "Дата начала текущей сессии: ";
+    private const string SessionStartFormat = "yyyy-MM-dd HH:mm:ss";
 
     // Steering file name used before the switch to the harness-agnostic AGENTS.md. agy reads
     // both, so a leftover copy would feed the persona to the model twice.
@@ -123,13 +126,35 @@ public sealed class ChatWorkspaceProvisioner
     private void WriteSteeringFile(string workingDirectory, bool isGroupChat)
     {
         var steeringPath = Path.Combine(workingDirectory, SteeringFileName);
-        if (File.Exists(steeringPath))
+        var existingContent = File.Exists(steeringPath) ? File.ReadAllText(steeringPath, Encoding.UTF8) : null;
+        var sessionStart = (existingContent is null ? null : ReadSessionStart(existingContent))
+                           ?? _timeProvider.GetUtcNow().UtcDateTime.ToString(SessionStartFormat, CultureInfo.InvariantCulture);
+
+        var content = BuildSteeringContent(isGroupChat, sessionStart);
+        if (string.Equals(existingContent, content, StringComparison.Ordinal))
         {
             return;
         }
 
-        File.WriteAllText(steeringPath, BuildSteeringContent(isGroupChat), Encoding.UTF8);
-        _logger.LogInformation("Wrote steering file at {Path}", steeringPath);
+        File.WriteAllText(steeringPath, content, Encoding.UTF8);
+        if (existingContent is null)
+        {
+            _logger.LogInformation("Wrote steering file at {Path}", steeringPath);
+        }
+        else
+        {
+            _logger.LogInformation("Refreshed steering file at {Path}", steeringPath);
+        }
+    }
+
+    private static string? ReadSessionStart(string steeringContent)
+    {
+        var line = steeringContent
+            .Split('\n')
+            .Select(static line => line.TrimEnd('\r'))
+            .LastOrDefault(static line => line.StartsWith(SessionStartPrefix, StringComparison.Ordinal));
+
+        return line is null ? null : line[SessionStartPrefix.Length..].Trim();
     }
 
     private static string BuildSkillContent(AgentSkill skill)
@@ -145,10 +170,9 @@ public sealed class ChatWorkspaceProvisioner
             """;
     }
 
-    private string BuildSteeringContent(bool isGroupChat)
+    private static string BuildSteeringContent(bool isGroupChat, string sessionStart)
     {
         var chatRule = isGroupChat ? Const.GroupChatRuleSystemPrompt : Const.PersonalChatRuleSystemPrompt;
-        var sessionStart = _timeProvider.GetUtcNow().UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
         return Const.SystemPrompt
                + Environment.NewLine + Environment.NewLine
@@ -158,7 +182,7 @@ public sealed class ChatWorkspaceProvisioner
                + Environment.NewLine + Environment.NewLine
                + BuildSkillsIndex()
                + Environment.NewLine + Environment.NewLine
-               + $"Дата начала текущей сессии: {sessionStart}";
+               + SessionStartPrefix + sessionStart;
     }
 
     private static string BuildSkillsIndex()
