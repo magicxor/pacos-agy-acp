@@ -48,27 +48,29 @@ internal sealed class AcpSessionPoolTests
     }
 
     [Test]
-    public void IsAgyTurnOverBudget_ReturnsTrue_WhenElapsedReachesTheFraction()
+    public void BuildEnvironment_PassesTheTurnBudgetToTheAdapterAndABackstopToAgy()
     {
-        Assert.That(
-            AcpSessionPool.IsAgyTurnOverBudget(TimeSpan.FromSeconds(270), TimeSpan.FromSeconds(300)),
-            Is.True);
+        var options = CreateOptions();
+        options.PromptTimeoutSeconds = 300;
+
+        var environment = AcpSessionPool.BuildEnvironment(options, -100111, []);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(environment[AcpSessionPool.TurnTimeoutEnvironmentVariable], Is.EqualTo("300"));
+            Assert.That(environment["AGY_EXTRA_ARGS"], Is.EqualTo("--print-timeout 315s"));
+        });
     }
 
     [Test]
-    public void IsAgyTurnOverBudget_ReturnsFalse_WhenElapsedIsJustBelowTheFraction()
+    public void BuildEnvironment_AppendsAgyExtraArgsAfterTheBackstop()
     {
-        Assert.That(
-            AcpSessionPool.IsAgyTurnOverBudget(TimeSpan.FromSeconds(269), TimeSpan.FromSeconds(300)),
-            Is.False);
-    }
+        var options = CreateOptions();
+        options.AgyExtraArgs = "--model 'Gemini 3.5 Flash (High)'";
 
-    [Test]
-    public void IsAgyTurnOverBudget_ReturnsFalse_WhenTransientFailureFailsFast()
-    {
-        Assert.That(
-            AcpSessionPool.IsAgyTurnOverBudget(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(300)),
-            Is.False);
+        var environment = AcpSessionPool.BuildEnvironment(options, -100111, []);
+
+        Assert.That(environment["AGY_EXTRA_ARGS"], Is.EqualTo("--print-timeout 315s --model 'Gemini 3.5 Flash (High)'"));
     }
 
     [Test]

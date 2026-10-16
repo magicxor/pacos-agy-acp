@@ -86,6 +86,11 @@ public static class Const
     public const int MaxTelegramMessageLength = 4096;
     public const int MaxTelegramRichMessageLength = 32768;
     public const int MaxTelegramCaptionLength = 1024;
+
+    // Appended to a reply cut short by the turn time budget, so a partial answer is not
+    // mistaken for a complete one. Plain text: it must read the same in MarkdownV2 messages
+    // and in unformatted captions.
+    public const string TurnTimeoutNotice = "(Ответ неполный: не уложился в лимит времени и остановился на полпути. Можно попросить продолжить.)";
     public const int MaxTelegramMediaGroupSize = 10;
     public const int MaxTelegramPhotoSizeBytes = 10 * 1024 * 1024;
     public const int MaxTelegramFileSizeBytes = 50 * 1024 * 1024;

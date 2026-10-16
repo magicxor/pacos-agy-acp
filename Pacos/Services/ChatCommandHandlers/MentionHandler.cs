@@ -105,11 +105,12 @@ public sealed class MentionHandler
     }
 
     /// <summary>
-    /// Builds the chat-response retry policy. Transient ACP/IO failures and empty results —
-    /// which fail fast and may succeed on a fresh session — are retried, but
-    /// <see cref="AgyTurnTimeoutException"/> is deliberately not handled: an over-budget turn
-    /// would redo the same work and exhaust the budget again, so it must run exactly once.
-    /// Taking the sleep durations as a parameter keeps the policy fast to exercise in tests.
+    /// Builds the chat-response retry policy. Transient ACP/IO failures, session-setup
+    /// handshake timeouts and empty results — which fail fast and may succeed on a fresh
+    /// session — are retried, but <see cref="AgyTurnTimeoutException"/> is deliberately not
+    /// handled: an over-budget turn would redo the same work and exhaust the budget again, so
+    /// it must run exactly once. Taking the sleep durations as a parameter keeps the policy
+    /// fast to exercise in tests.
     /// </summary>
     internal static IAsyncPolicy<ChatResponseInfo> BuildChatResponseRetryPolicy(
         IEnumerable<TimeSpan> sleepDurations,
@@ -117,6 +118,7 @@ public sealed class MentionHandler
     {
         return Policy
             .Handle<AcpException>()
+            .Or<TimeoutException>()
             .Or<HttpRequestException>()
             .Or<IOException>()
             .OrResult<ChatResponseInfo>(x => string.IsNullOrWhiteSpace(x.Text) && x.Files.Count == 0)
@@ -290,7 +292,7 @@ public sealed class MentionHandler
 
         // Short replies keep the classic MarkdownV2 message; anything longer than the regular
         // message limit is sent as a rich message, which allows up to MaxTelegramRichMessageLength
-        var replyText = response.Text.Cut(Const.MaxTelegramRichMessageLength);
+        var replyText = response.ToReplyText(Const.MaxTelegramRichMessageLength);
 
         if (string.IsNullOrWhiteSpace(replyText) && response.Files.Count == 0)
         {

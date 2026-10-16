@@ -17,6 +17,27 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use types::*;
 
+/// Optional per-turn budget in whole seconds. When set, the adapter kills agy once the
+/// turn has run this long and reports `stopReason: "timeout"`, so the client learns
+/// explicitly that the budget — not some other failure — ended the turn. Unset, zero or
+/// unparsable disables the deadline (agy's own `--print-timeout` still applies).
+const TURN_TIMEOUT_ENV: &str = "AGY_ACP_TURN_TIMEOUT_SECS";
+const TIMEOUT_STOP_REASON: &str = "timeout";
+
+fn parse_turn_timeout(value: Option<&str>) -> Option<Duration> {
+    value
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|&secs| secs > 0)
+        .map(Duration::from_secs)
+}
+
+async fn turn_deadline(timeout: Option<Duration>) {
+    match timeout {
+        Some(timeout) => tokio::time::sleep(timeout).await,
+        None => std::future::pending::<()>().await,
+    }
+}
+
 impl Adapter {
     /// Execute prompt subprocess without holding any adapter lock.
     pub async fn execute_prompt(
@@ -106,7 +127,9 @@ impl Adapter {
 
         let _stop_guard = StopGuard(Arc::clone(&stop_polling));
 
+        let turn_timeout = parse_turn_timeout(std::env::var(TURN_TIMEOUT_ENV).ok().as_deref());
         let mut was_cancelled = false;
+        let mut timed_out = false;
         let result = tokio::select! {
             result = child.wait() => result,
             _ = async {
@@ -118,7 +141,16 @@ impl Adapter {
                 let _ = child.kill().await;
                 child.wait().await
             }
+            _ = turn_deadline(turn_timeout) => {
+                timed_out = true;
+                eprintln!("[agy-acp] turn exceeded its {}s budget; killing agy", turn_timeout.map_or(0, |t| t.as_secs()));
+                let _ = child.kill().await;
+                child.wait().await
+            }
         };
+        // A turn this adapter stopped itself (cancel or deadline) is an explicit outcome,
+        // not a failure: it is reported through stopReason and never surfaced as an error.
+        let stopped_by_adapter = was_cancelled || timed_out;
 
         let _ = stdout_reader.await;
         let stderr_bytes = stderr_reader.await.unwrap_or_default();
@@ -142,6 +174,7 @@ impl Adapter {
         let session_update = Some((bound_conv_id.clone(), new_step_idx));
 
         let stop_reason = if was_cancelled { "cancelled" }
+            else if timed_out { TIMEOUT_STOP_REASON }
             else if result.as_ref().map(|s| !s.success()).unwrap_or(false) { "error" }
             else { "end_turn" };
 
@@ -149,7 +182,7 @@ impl Adapter {
             Ok(status) => {
                 let stderr_text = String::from_utf8_lossy(&stderr_bytes);
                 if !stderr_text.is_empty() { eprintln!("[agy-acp] agy stderr: {}", stderr_text.trim_end()); }
-                if !was_cancelled && !status.success() {
+                if !stopped_by_adapter && !status.success() {
                     eprintln!("[agy-acp] WARN: agy exited with status: {}", status);
                 }
                 // agy hides the real failure cause in both of its failure modes:
@@ -160,13 +193,13 @@ impl Adapter {
                 // recorded only in its own cli.log. Scan it for every turn that
                 // produced no updates so the surfaced error carries the cause.
                 // See `decide_turn_error` for the full decision logic.
-                let log_error = if !was_cancelled && !had_updates {
+                let log_error = if !stopped_by_adapter && !had_updates {
                     detect_swallowed_agy_error(&conversations_dir, &log_pre_snapshot, spawn_time)
                 } else {
                     None
                 };
                 if let Some((code, msg)) = decide_turn_error(
-                    was_cancelled, status.success(), had_updates, &status.to_string(), &stderr_text, log_error.as_deref(),
+                    stopped_by_adapter, status.success(), had_updates, &status.to_string(), &stderr_text, log_error.as_deref(),
                 ) {
                     eprintln!("[agy-acp] surfacing turn error ({code}): {msg}");
                     return PromptOutput {
@@ -205,16 +238,18 @@ impl Adapter {
 /// nonzero exit it is appended to the generic stderr/status message (agy's
 /// stderr never names the actual cause); on a zero exit with no output it is
 /// surfaced on its own as -32603.
-/// Returns `Some((code, message))` when an error should be surfaced.
+/// Returns `Some((code, message))` when an error should be surfaced. A turn the
+/// adapter stopped itself (`stopped_by_adapter`: cancelled, or killed at the turn
+/// deadline) is never an error — its outcome is carried by the `stopReason`.
 fn decide_turn_error(
-    was_cancelled: bool,
+    stopped_by_adapter: bool,
     status_success: bool,
     had_updates: bool,
     status_display: &str,
     stderr_text: &str,
     log_error: Option<&str>,
 ) -> Option<(i32, String)> {
-    if was_cancelled || had_updates {
+    if stopped_by_adapter || had_updates {
         return None;
     }
     if !status_success {
@@ -1064,6 +1099,31 @@ E0707 08:34:23.910604  84 log.go:398] agent executor error: model unreachable: R
     #[test]
     fn test_decide_turn_error_cancelled_never_surfaces() {
         assert_eq!(decide_turn_error(true, false, false, "exit 1", "boom", Some("swallowed")), None);
+    }
+
+    #[test]
+    fn test_parse_turn_timeout_accepts_positive_seconds() {
+        assert_eq!(parse_turn_timeout(Some("300")), Some(Duration::from_secs(300)));
+        assert_eq!(parse_turn_timeout(Some(" 45 ")), Some(Duration::from_secs(45)));
+    }
+
+    #[test]
+    fn test_parse_turn_timeout_disabled_when_unset_zero_or_invalid() {
+        for value in [None, Some(""), Some("0"), Some("-5"), Some("5m"), Some("abc")] {
+            assert_eq!(parse_turn_timeout(value), None, "{value:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_turn_deadline_fires_after_timeout() {
+        let fired = tokio::time::timeout(Duration::from_secs(2), turn_deadline(Some(Duration::from_millis(10)))).await;
+        assert!(fired.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_turn_deadline_never_fires_when_disabled() {
+        let fired = tokio::time::timeout(Duration::from_millis(50), turn_deadline(None)).await;
+        assert!(fired.is_err());
     }
 
     #[test]

@@ -18,6 +18,9 @@ public sealed class AcpConnection : IAsyncDisposable
     private const string ClientName = "pacos";
     private const string ClientVersion = "0.1.0";
 
+    // stopReason agy-acp reports when it killed agy at the AGY_ACP_TURN_TIMEOUT_SECS deadline.
+    private const string TimeoutStopReason = "timeout";
+
     private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(120);
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -134,9 +137,10 @@ public sealed class AcpConnection : IAsyncDisposable
     }
 
     /// <summary>
-    /// Sends a single user prompt and returns the agent's full text response.
+    /// Sends a single user prompt and returns the agent's full text response together with
+    /// whether agy-acp ended the turn at its deadline.
     /// </summary>
-    public async Task<string> PromptAsync(
+    public async Task<AcpPromptResult> PromptAsync(
         string sessionId,
         string promptText,
         TimeSpan timeout,
@@ -153,12 +157,20 @@ public sealed class AcpConnection : IAsyncDisposable
             prompt = new[] { new { type = "text", text = promptText } },
         };
 
-        await SendRequestAsync("session/prompt", parameters, timeout, cancellationToken);
+        var result = await SendRequestAsync("session/prompt", parameters, timeout, cancellationToken);
 
         lock (_bufferGate)
         {
-            return _notificationBuffer.ToString();
+            return new AcpPromptResult(_notificationBuffer.ToString(), IsTimeoutStopReason(result));
         }
+    }
+
+    private static bool IsTimeoutStopReason(JsonElement result)
+    {
+        return result.ValueKind == JsonValueKind.Object
+               && result.TryGetProperty("stopReason", out var stopReason)
+               && stopReason.ValueKind == JsonValueKind.String
+               && stopReason.GetString() == TimeoutStopReason;
     }
 
     private async Task<JsonElement> SendRequestAsync(

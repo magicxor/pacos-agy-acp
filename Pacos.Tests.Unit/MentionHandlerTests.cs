@@ -44,19 +44,31 @@ internal sealed class MentionHandlerTests
     }
 
     [Test]
-    public void BuildChatResponseRetryPolicy_RetriesEmptyResultFourTimes()
+    public void BuildChatResponseRetryPolicy_RetriesSessionSetupTimeoutFourTimes()
     {
         var attempts = 0;
         var policy = MentionHandler.BuildChatResponseRetryPolicy(NoRetryDelays, (_, _, _) => { });
 
-        var result = policy
-            .ExecuteAsync(() =>
-            {
-                attempts++;
-                return Task.FromResult(new ChatResponseInfo(string.Empty, []));
-            })
-            .GetAwaiter()
-            .GetResult();
+        Assert.ThrowsAsync<TimeoutException>(() => policy.ExecuteAsync(() =>
+        {
+            attempts++;
+            throw new TimeoutException("agy-acp 'session/new' request timed out after 120s");
+        }));
+
+        Assert.That(attempts, Is.EqualTo(4));
+    }
+
+    [Test]
+    public async Task BuildChatResponseRetryPolicy_RetriesEmptyResultFourTimes()
+    {
+        var attempts = 0;
+        var policy = MentionHandler.BuildChatResponseRetryPolicy(NoRetryDelays, (_, _, _) => { });
+
+        var result = await policy.ExecuteAsync(() =>
+        {
+            attempts++;
+            return Task.FromResult(new ChatResponseInfo(string.Empty, []));
+        });
 
         Assert.Multiple(() =>
         {
