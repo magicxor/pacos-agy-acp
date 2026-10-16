@@ -33,4 +33,30 @@ internal sealed class AgyTurnTimeoutsTests
             Assert.That(timeouts.Watchdog, Is.GreaterThanOrEqualTo(timeouts.CliBackstop + TimeSpan.FromSeconds(1)));
         });
     }
+
+    /// <summary>
+    /// After the turn deadline agy-acp still kills agy and drains pipes a descendant may hold
+    /// (up to its 5s PIPE_DRAIN_TIMEOUT), so even the shortest budget must leave the full
+    /// cleanup allowance before the watchdog gives up on the reply.
+    /// </summary>
+    [TestCase(1)]
+    [TestCase(7)]
+    [TestCase(60)]
+    [TestCase(300)]
+    public void FromBudget_AlwaysLeavesTheAdapterCleanupAllowanceAfterTheTurn(int turnSeconds)
+    {
+        var timeouts = AgyTurnTimeouts.FromBudget(turnSeconds);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(timeouts.Watchdog - timeouts.Turn, Is.GreaterThanOrEqualTo(AgyTurnTimeouts.AdapterCleanupAllowance));
+            Assert.That(AgyTurnTimeouts.AdapterCleanupAllowance, Is.GreaterThan(TimeSpan.FromSeconds(5)));
+        });
+    }
+
+    [Test]
+    public void FromBudget_ShortBudget_WatchdogCoversTheCleanup()
+    {
+        Assert.That(AgyTurnTimeouts.FromBudget(1).Watchdog, Is.EqualTo(TimeSpan.FromSeconds(11)));
+    }
 }

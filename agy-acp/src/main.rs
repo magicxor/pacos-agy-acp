@@ -41,6 +41,8 @@ async fn turn_deadline(timeout: Option<Duration>) {
 /// How long to keep reading agy's stdout/stderr after agy itself has exited. A
 /// descendant that inherited one of the pipes (an MCP server, a tool subprocess) keeps
 /// it open past agy's exit, and an unbounded read would then never finish the turn.
+/// Pacos reserves a fixed cleanup allowance for this in its watchdog
+/// (`AgyTurnTimeouts.AdapterCleanupAllowance`), which must stay larger.
 const PIPE_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Starts agy as the leader of its own process group, so a stopped turn can take
@@ -80,6 +82,15 @@ async fn drain_pipe(reader: tokio::task::JoinHandle<Vec<u8>>, name: &str) -> Vec
             Vec::new()
         }
     }
+}
+
+/// Drains agy's stdout and stderr concurrently, so the whole cleanup after agy exits
+/// takes at most one `PIPE_DRAIN_TIMEOUT` rather than one per pipe.
+async fn drain_pipes(
+    stdout: tokio::task::JoinHandle<Vec<u8>>,
+    stderr: tokio::task::JoinHandle<Vec<u8>>,
+) -> (Vec<u8>, Vec<u8>) {
+    tokio::join!(drain_pipe(stdout, "stdout"), drain_pipe(stderr, "stderr"))
 }
 
 impl Adapter {
@@ -196,8 +207,7 @@ impl Adapter {
         // not a failure: it is reported through stopReason and never surfaced as an error.
         let stopped_by_adapter = was_cancelled || timed_out;
 
-        let _ = drain_pipe(stdout_reader, "stdout").await;
-        let stderr_bytes = drain_pipe(stderr_reader, "stderr").await;
+        let (_, stderr_bytes) = drain_pipes(stdout_reader, stderr_reader).await;
 
         stop_polling.store(true, Ordering::SeqCst);
         let _ = poller.join();
@@ -1174,6 +1184,23 @@ E0707 08:34:23.910604  84 log.go:398] agent executor error: model unreachable: R
     async fn test_drain_pipe_returns_what_a_finished_reader_read() {
         let reader = tokio::spawn(async { b"agy output".to_vec() });
         assert_eq!(drain_pipe(reader, "stdout").await, b"agy output");
+    }
+
+    /// Both pipes held open by a descendant must cost one drain timeout, not two: the
+    /// Pacos watchdog only reserves a fixed cleanup allowance beyond the turn budget.
+    #[tokio::test]
+    async fn test_drain_pipes_bounds_two_stuck_pipes_by_a_single_timeout() {
+        let stuck = || tokio::spawn(async { std::future::pending::<Vec<u8>>().await });
+        let started = std::time::Instant::now();
+
+        let (stdout, stderr) = drain_pipes(stuck(), stuck()).await;
+
+        assert!(stdout.is_empty() && stderr.is_empty());
+        assert!(
+            started.elapsed() < PIPE_DRAIN_TIMEOUT + Duration::from_secs(2),
+            "draining took {:?}",
+            started.elapsed()
+        );
     }
 
     /// A descendant that inherited agy's stderr must not keep a stopped turn from
