@@ -85,9 +85,10 @@ public sealed class MentionHandler
             medianFirstRetryDelay: TimeSpan.FromSeconds(5),
             retryCount: 3);
 
+        // A prompt timeout is deliberately not retried: it means the agent's turn itself did
+        // not fit the budget, so a fresh attempt redoes the same work and times out again.
         var retryPolicy = Policy
-            .Handle<TimeoutException>()
-            .Or<AcpException>()
+            .Handle<AcpException>()
             .Or<HttpRequestException>()
             .Or<IOException>()
             .OrResult<ChatResponseInfo>(x => string.IsNullOrWhiteSpace(x.Text) && x.Files.Count == 0)

@@ -81,9 +81,11 @@ public sealed class PacosOptions
     public string? Crawl4AiApiToken { get; set; }
 
     /// <summary>
-    /// Hard timeout (in seconds) for a single prompt round-trip to agy-acp.
-    /// Also forwarded to agy as <c>--print-timeout</c> so the CLI's own headless
-    /// timeout (default 5m) never undercuts this value.
+    /// Budget (in seconds) for a single agent turn, forwarded to agy as its
+    /// <c>--print-timeout</c> ceiling. The Pacos <c>session/prompt</c> timeout is
+    /// derived from this value plus a small watchdog margin, so agy hits its own
+    /// ceiling first and the adapter can surface the real cause instead of a blunt
+    /// outer timeout.
     /// </summary>
     [Range(1, 3600)]
     public int PromptTimeoutSeconds { get; set; } = 300;

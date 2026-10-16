@@ -26,6 +26,15 @@ public sealed class AcpSessionPool : IAsyncDisposable
     /// </summary>
     public const string TelegramChatIdEnvironmentVariable = "TELEGRAM_CHAT_ID";
 
+    /// <summary>
+    /// Fraction by which the Pacos <c>session/prompt</c> timeout exceeds agy's own
+    /// <c>--print-timeout</c>. agy must hit its ceiling first and self-terminate so the
+    /// adapter can surface the real cause; the Pacos timeout is only a watchdog for an
+    /// unresponsive agy-acp and therefore has to be strictly larger, with headroom for
+    /// agy's process teardown, final DB flush and response delivery.
+    /// </summary>
+    private const double PromptTimeoutWatchdogMargin = 0.15;
+
     private readonly ILogger<AcpSessionPool> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly string _command;
@@ -48,7 +57,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
         var value = options.Value;
         _command = value.AgyAcpCommand;
         _args = value.AgyAcpArgs;
-        _promptTimeout = TimeSpan.FromSeconds(value.PromptTimeoutSeconds);
+        _promptTimeout = TimeSpan.FromSeconds(value.PromptTimeoutSeconds * (1 + PromptTimeoutWatchdogMargin));
         _idleTimeout = TimeSpan.FromMinutes(value.SessionIdleTimeoutMinutes);
         _root = ResolveRoot(value);
         _options = value;
@@ -328,8 +337,11 @@ public sealed class AcpSessionPool : IAsyncDisposable
 
         // agy >= 1.1.x caps headless runs with its own --print-timeout (default
         // 5m), so align it with the bot's prompt timeout or longer turns would be
-        // cut short by the CLI default. Injected first so a user-supplied
-        // --print-timeout in AgyExtraArgs wins (later flags override earlier ones).
+        // cut short by the CLI default. This is the inner ceiling: agy must hit it
+        // first and self-terminate, while the Pacos session/prompt timeout
+        // (PromptTimeoutWatchdogMargin larger) is only the outer watchdog. Injected
+        // first so a user-supplied --print-timeout in AgyExtraArgs wins (later flags
+        // override earlier ones).
         var extraArgs = string.Create(CultureInfo.InvariantCulture, $"--print-timeout {options.PromptTimeoutSeconds}s");
         if (!string.IsNullOrWhiteSpace(options.AgyExtraArgs))
         {
