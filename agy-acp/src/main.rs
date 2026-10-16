@@ -38,6 +38,50 @@ async fn turn_deadline(timeout: Option<Duration>) {
     }
 }
 
+/// How long to keep reading agy's stdout/stderr after agy itself has exited. A
+/// descendant that inherited one of the pipes (an MCP server, a tool subprocess) keeps
+/// it open past agy's exit, and an unbounded read would then never finish the turn.
+const PIPE_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Starts agy as the leader of its own process group, so a stopped turn can take
+/// down every process agy spawned, not just agy.
+#[cfg(unix)]
+fn isolate_process_group(command: &mut Command) {
+    command.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn isolate_process_group(_command: &mut Command) {}
+
+/// Kills agy together with its descendants and reaps it. Killing only agy would leave
+/// its MCP servers and tool subprocesses running, possibly still holding its pipes.
+async fn terminate_turn(child: &mut tokio::process::Child) -> std::io::Result<std::process::ExitStatus> {
+    #[cfg(unix)]
+    if let Some(pid) = child.id().and_then(|pid| libc::pid_t::try_from(pid).ok()) {
+        // SAFETY: kill(2) has no memory-safety preconditions. agy is the leader of the group
+        // isolate_process_group created and has not been reaped yet, so the group id cannot
+        // have been reused by an unrelated process.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill().await;
+    child.wait().await
+}
+
+/// Collects what a pipe reader read, giving up after `PIPE_DRAIN_TIMEOUT`.
+async fn drain_pipe(reader: tokio::task::JoinHandle<Vec<u8>>, name: &str) -> Vec<u8> {
+    let abort = reader.abort_handle();
+    match tokio::time::timeout(PIPE_DRAIN_TIMEOUT, reader).await {
+        Ok(result) => result.unwrap_or_default(),
+        Err(_) => {
+            abort.abort();
+            eprintln!("[agy-acp] agy {name} still open {}s after agy exited; abandoning it", PIPE_DRAIN_TIMEOUT.as_secs());
+            Vec::new()
+        }
+    }
+}
+
 impl Adapter {
     /// Execute prompt subprocess without holding any adapter lock.
     pub async fn execute_prompt(
@@ -60,14 +104,16 @@ impl Adapter {
         let log_pre_snapshot = snapshot_agy_logs(&conversations_dir);
         let spawn_time = std::time::SystemTime::now();
 
-        let spawn_result = Command::new(Adapter::agy_bin())
+        let mut command = Command::new(Adapter::agy_bin());
+        command
             .args(&args)
             .env("PATH", Adapter::augmented_path())
             .current_dir(&working_dir)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn();
+            .stderr(std::process::Stdio::piped());
+        isolate_process_group(&mut command);
+        let spawn_result = command.spawn();
 
         let mut child = match spawn_result {
             Ok(child) => child,
@@ -138,22 +184,20 @@ impl Adapter {
                 }
             } => {
                 was_cancelled = true;
-                let _ = child.kill().await;
-                child.wait().await
+                terminate_turn(&mut child).await
             }
             _ = turn_deadline(turn_timeout) => {
                 timed_out = true;
                 eprintln!("[agy-acp] turn exceeded its {}s budget; killing agy", turn_timeout.map_or(0, |t| t.as_secs()));
-                let _ = child.kill().await;
-                child.wait().await
+                terminate_turn(&mut child).await
             }
         };
         // A turn this adapter stopped itself (cancel or deadline) is an explicit outcome,
         // not a failure: it is reported through stopReason and never surfaced as an error.
         let stopped_by_adapter = was_cancelled || timed_out;
 
-        let _ = stdout_reader.await;
-        let stderr_bytes = stderr_reader.await.unwrap_or_default();
+        let _ = drain_pipe(stdout_reader, "stdout").await;
+        let stderr_bytes = drain_pipe(stderr_reader, "stderr").await;
 
         stop_polling.store(true, Ordering::SeqCst);
         let _ = poller.join();
@@ -1124,6 +1168,47 @@ E0707 08:34:23.910604  84 log.go:398] agent executor error: model unreachable: R
     async fn test_turn_deadline_never_fires_when_disabled() {
         let fired = tokio::time::timeout(Duration::from_millis(50), turn_deadline(None)).await;
         assert!(fired.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_drain_pipe_returns_what_a_finished_reader_read() {
+        let reader = tokio::spawn(async { b"agy output".to_vec() });
+        assert_eq!(drain_pipe(reader, "stdout").await, b"agy output");
+    }
+
+    /// A descendant that inherited agy's stderr must not keep a stopped turn from
+    /// finishing: terminate_turn kills the whole process group, so the pipe closes.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_terminate_turn_kills_descendants_holding_the_pipes() {
+        use tokio::io::AsyncBufReadExt;
+
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "sleep 60 & echo ready; sleep 60"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        isolate_process_group(&mut command);
+        let mut child = command.spawn().unwrap();
+
+        // Kill only once the background descendant exists, or there is nothing to leak.
+        let mut stdout = tokio::io::BufReader::new(child.stdout.take().unwrap());
+        let mut ready = String::new();
+        stdout.read_line(&mut ready).await.unwrap();
+        assert_eq!(ready.trim(), "ready");
+
+        let mut stderr = child.stderr.take().unwrap();
+        let reader = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            let _ = stderr.read_to_end(&mut buf).await;
+            buf
+        });
+
+        terminate_turn(&mut child).await.unwrap();
+
+        let closed = tokio::time::timeout(Duration::from_secs(3), reader).await;
+        assert!(closed.is_ok(), "a descendant still holds agy's stderr after terminate_turn");
     }
 
     #[test]

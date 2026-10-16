@@ -303,7 +303,7 @@ public sealed class MentionHandler
         {
             if (replyText.Length > Const.MaxTelegramMessageLength)
             {
-                await SendRichReply(replyText);
+                await SendRichReply(replyText, response.ToReplyText(Const.MaxTelegramMessageLength));
             }
             else
             {
@@ -389,7 +389,9 @@ public sealed class MentionHandler
                 cancellationToken: cancellationToken);
         }
 
-        async Task SendRichReply(string text)
+        // plainTextFallback is pre-cut to the regular message limit by the caller, so a partial
+        // reply keeps its timeout notice even when rich delivery fails.
+        async Task SendRichReply(string text, string plainTextFallback)
         {
             var richMarkdownText = _markdownConversionService.ConvertToTelegramRichMarkdown(text);
 
@@ -406,7 +408,7 @@ public sealed class MentionHandler
             catch (Exception e)
             {
                 _logger.LogError(e, "Failed to send rich message. Falling back to cut plain text");
-                await SendReply(text.Cut(Const.MaxTelegramMessageLength), ParseMode.None);
+                await SendReply(plainTextFallback, ParseMode.None);
             }
         }
     }
