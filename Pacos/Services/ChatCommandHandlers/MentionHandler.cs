@@ -85,21 +85,14 @@ public sealed class MentionHandler
             medianFirstRetryDelay: TimeSpan.FromSeconds(5),
             retryCount: 3);
 
-        // A prompt timeout is deliberately not retried: it means the agent's turn itself did
-        // not fit the budget, so a fresh attempt redoes the same work and times out again.
-        var retryPolicy = Policy
-            .Handle<AcpException>()
-            .Or<HttpRequestException>()
-            .Or<IOException>()
-            .OrResult<ChatResponseInfo>(x => string.IsNullOrWhiteSpace(x.Text) && x.Files.Count == 0)
-            .WaitAndRetryAsync(
-                sleepDurations,
-                (outcome, delay, retryNumber, _) => _logger.LogWarning(
-                    outcome.Exception,
-                    "Chat response attempt {RetryNumber} failed for chat {ChatId}; retrying in {Delay}",
-                    retryNumber,
-                    chatId,
-                    delay));
+        var retryPolicy = BuildChatResponseRetryPolicy(
+            sleepDurations,
+            (outcome, delay, retryNumber) => _logger.LogWarning(
+                outcome.Exception,
+                "Chat response attempt {RetryNumber} failed for chat {ChatId}; retrying in {Delay}",
+                retryNumber,
+                chatId,
+                delay));
 
         return await retryPolicy.ExecuteAsync(() => _chatService.GetResponseAsync(
             chatId,
@@ -109,6 +102,27 @@ public sealed class MentionHandler
             messageText,
             attachments
         ));
+    }
+
+    /// <summary>
+    /// Builds the chat-response retry policy. Transient ACP/IO failures and empty results —
+    /// which fail fast and may succeed on a fresh session — are retried, but
+    /// <see cref="AgyTurnTimeoutException"/> is deliberately not handled: an over-budget turn
+    /// would redo the same work and exhaust the budget again, so it must run exactly once.
+    /// Taking the sleep durations as a parameter keeps the policy fast to exercise in tests.
+    /// </summary>
+    internal static IAsyncPolicy<ChatResponseInfo> BuildChatResponseRetryPolicy(
+        IEnumerable<TimeSpan> sleepDurations,
+        Action<DelegateResult<ChatResponseInfo>, TimeSpan, int> onRetry)
+    {
+        return Policy
+            .Handle<AcpException>()
+            .Or<HttpRequestException>()
+            .Or<IOException>()
+            .OrResult<ChatResponseInfo>(x => string.IsNullOrWhiteSpace(x.Text) && x.Files.Count == 0)
+            .WaitAndRetryAsync(
+                sleepDurations,
+                (outcome, delay, retryNumber, _) => onRetry(outcome, delay, retryNumber));
     }
 
     private static string? PollToText(Poll? poll)

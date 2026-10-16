@@ -48,6 +48,30 @@ internal sealed class AcpSessionPoolTests
     }
 
     [Test]
+    public void IsAgyTurnOverBudget_ReturnsTrue_WhenElapsedReachesTheFraction()
+    {
+        Assert.That(
+            AcpSessionPool.IsAgyTurnOverBudget(TimeSpan.FromSeconds(270), TimeSpan.FromSeconds(300)),
+            Is.True);
+    }
+
+    [Test]
+    public void IsAgyTurnOverBudget_ReturnsFalse_WhenElapsedIsJustBelowTheFraction()
+    {
+        Assert.That(
+            AcpSessionPool.IsAgyTurnOverBudget(TimeSpan.FromSeconds(269), TimeSpan.FromSeconds(300)),
+            Is.False);
+    }
+
+    [Test]
+    public void IsAgyTurnOverBudget_ReturnsFalse_WhenTransientFailureFailsFast()
+    {
+        Assert.That(
+            AcpSessionPool.IsAgyTurnOverBudget(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(300)),
+            Is.False);
+    }
+
+    [Test]
     public void BuildEnvironment_InjectsTheChatId()
     {
         var environment = AcpSessionPool.BuildEnvironment(CreateOptions(), -1001234567890, []);

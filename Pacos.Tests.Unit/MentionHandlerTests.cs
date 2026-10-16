@@ -1,4 +1,7 @@
+using Pacos.Models;
+using Pacos.Services.Acp;
 using Pacos.Services.ChatCommandHandlers;
+using Polly;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
@@ -8,6 +11,60 @@ namespace Pacos.Tests.Unit;
 [Parallelizable(scope: ParallelScope.All)]
 internal sealed class MentionHandlerTests
 {
+    private static readonly TimeSpan[] NoRetryDelays = [TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero];
+
+    [Test]
+    public void BuildChatResponseRetryPolicy_DoesNotRetryTurnTimeout()
+    {
+        var attempts = 0;
+        var policy = MentionHandler.BuildChatResponseRetryPolicy(NoRetryDelays, (_, _, _) => { });
+
+        Assert.ThrowsAsync<AgyTurnTimeoutException>(() => policy.ExecuteAsync(() =>
+        {
+            attempts++;
+            throw new AgyTurnTimeoutException("over budget");
+        }));
+
+        Assert.That(attempts, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void BuildChatResponseRetryPolicy_RetriesTransientAcpFailureFourTimes()
+    {
+        var attempts = 0;
+        var policy = MentionHandler.BuildChatResponseRetryPolicy(NoRetryDelays, (_, _, _) => { });
+
+        Assert.ThrowsAsync<AcpException>(() => policy.ExecuteAsync(() =>
+        {
+            attempts++;
+            throw new AcpException("transient");
+        }));
+
+        Assert.That(attempts, Is.EqualTo(4));
+    }
+
+    [Test]
+    public void BuildChatResponseRetryPolicy_RetriesEmptyResultFourTimes()
+    {
+        var attempts = 0;
+        var policy = MentionHandler.BuildChatResponseRetryPolicy(NoRetryDelays, (_, _, _) => { });
+
+        var result = policy
+            .ExecuteAsync(() =>
+            {
+                attempts++;
+                return Task.FromResult(new ChatResponseInfo(string.Empty, []));
+            })
+            .GetAwaiter()
+            .GetResult();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(attempts, Is.EqualTo(4));
+            Assert.That(result.Text, Is.Empty);
+        });
+    }
+
     [Test]
     public void ResolveRepliedToText_WhenQuotePresent_ShouldReturnQuotedFragmentOnly()
     {

@@ -35,12 +35,21 @@ public sealed class AcpSessionPool : IAsyncDisposable
     /// </summary>
     private const double PromptTimeoutWatchdogMargin = 0.15;
 
+    /// <summary>
+    /// Fraction of agy's turn budget beyond which a failed or empty turn is treated as having
+    /// been cut off by agy's <c>--print-timeout</c> (and therefore not worth retrying) rather
+    /// than as a fast transient failure. The margin keeps a quick failure near the start of a
+    /// turn from being misclassified as budget exhaustion.
+    /// </summary>
+    private const double AgyTurnOverBudgetFraction = 0.9;
+
     private readonly ILogger<AcpSessionPool> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly string _command;
     private readonly IReadOnlyList<string> _args;
     private readonly string _root;
     private readonly TimeSpan _promptTimeout;
+    private readonly TimeSpan _agyTurnBudget;
     private readonly TimeSpan _idleTimeout;
     private readonly PacosOptions _options;
     private readonly string? _fallbackModel;
@@ -58,6 +67,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
         _command = value.AgyAcpCommand;
         _args = value.AgyAcpArgs;
         _promptTimeout = TimeSpan.FromSeconds(value.PromptTimeoutSeconds * (1 + PromptTimeoutWatchdogMargin));
+        _agyTurnBudget = TimeSpan.FromSeconds(value.PromptTimeoutSeconds);
         _idleTimeout = TimeSpan.FromMinutes(value.SessionIdleTimeoutMinutes);
         _root = ResolveRoot(value);
         _options = value;
@@ -127,11 +137,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
             var session = await EnsureSessionAsync(chatId, modelOverride: null, cancellationToken);
             try
             {
-                return await session.Connection.PromptAsync(
-                    session.SessionId,
-                    promptText,
-                    _promptTimeout,
-                    cancellationToken);
+                return await RunClassifiedPromptAsync(session, promptText, cancellationToken);
             }
             catch (AcpException e) when (_fallbackModel is not null && session.ModelOverride is null && e.IsQuotaError)
             {
@@ -139,7 +145,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
                 await RemoveSessionAsync(chatId);
                 return await PromptWithFallbackModelAsync(chatId, promptText, cancellationToken);
             }
-            catch (Exception e) when (e is TimeoutException or AcpException)
+            catch (Exception e) when (e is TimeoutException or AcpException or AgyTurnTimeoutException)
             {
                 _logger.LogWarning(e, "agy-acp prompt failed for chat {ChatId}; tearing down session", chatId);
                 await RemoveSessionAsync(chatId);
@@ -168,19 +174,63 @@ public sealed class AcpSessionPool : IAsyncDisposable
         var session = await EnsureSessionAsync(chatId, _fallbackModel, cancellationToken);
         try
         {
-            return await session.Connection.PromptAsync(
-                session.SessionId,
-                promptText,
-                _promptTimeout,
-                cancellationToken);
+            return await RunClassifiedPromptAsync(session, promptText, cancellationToken);
         }
-        catch (Exception e) when (e is TimeoutException or AcpException)
+        catch (Exception e) when (e is TimeoutException or AcpException or AgyTurnTimeoutException)
         {
             _logger.LogWarning(e, "Fallback-model prompt failed for chat {ChatId}; tearing down session", chatId);
             await RemoveSessionAsync(chatId);
             throw;
         }
     }
+
+    /// <summary>
+    /// Runs a single prompt against the session and reclassifies an over-budget outcome. agy's
+    /// own <c>--print-timeout</c> fires before the Pacos watchdog, so a turn that exhausts the
+    /// budget comes back either as an <see cref="AcpException"/> (no updates, surfaced by the
+    /// adapter) or as empty text (updates but no final answer). Both are converted to
+    /// <see cref="AgyTurnTimeoutException"/> so the chat retry policy does not waste three more
+    /// full budgets redoing the same doomed turn; genuinely transient ACP failures fail fast,
+    /// well under budget, and keep propagating as <see cref="AcpException"/> to stay retryable.
+    /// Quota errors are left untouched so the fallback-model path still handles them.
+    /// </summary>
+    private async Task<string> RunClassifiedPromptAsync(ChatSession session, string promptText, CancellationToken cancellationToken)
+    {
+        var start = _timeProvider.GetUtcNow();
+        try
+        {
+            var text = await session.Connection.PromptAsync(
+                session.SessionId,
+                promptText,
+                _promptTimeout,
+                cancellationToken);
+
+            var elapsed = _timeProvider.GetUtcNow() - start;
+            if (string.IsNullOrWhiteSpace(text) && IsAgyTurnOverBudget(elapsed, _agyTurnBudget))
+            {
+                throw new AgyTurnTimeoutException(FormatTurnTimeoutMessage(elapsed));
+            }
+
+            return text;
+        }
+        catch (AcpException e) when (!e.IsQuotaError && IsAgyTurnOverBudget(_timeProvider.GetUtcNow() - start, _agyTurnBudget))
+        {
+            throw new AgyTurnTimeoutException(FormatTurnTimeoutMessage(_timeProvider.GetUtcNow() - start), e);
+        }
+    }
+
+    /// <summary>
+    /// True when a failed or empty turn ran for at least <see cref="AgyTurnOverBudgetFraction"/>
+    /// of agy's turn budget, i.e. it was cut off by agy's <c>--print-timeout</c> rather than
+    /// failing fast.
+    /// </summary>
+    internal static bool IsAgyTurnOverBudget(TimeSpan elapsed, TimeSpan budget)
+        => elapsed >= budget * AgyTurnOverBudgetFraction;
+
+    private static string FormatTurnTimeoutMessage(TimeSpan elapsed)
+        => string.Create(
+            CultureInfo.InvariantCulture,
+            $"agy turn exceeded its time budget after {elapsed.TotalSeconds:0}s without producing a reply");
 
     /// <summary>
     /// Tears down the chat's session when it has been idle past the configured
