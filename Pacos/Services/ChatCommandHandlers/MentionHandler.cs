@@ -85,20 +85,14 @@ public sealed class MentionHandler
             medianFirstRetryDelay: TimeSpan.FromSeconds(5),
             retryCount: 3);
 
-        var retryPolicy = Policy
-            .Handle<TimeoutException>()
-            .Or<AcpException>()
-            .Or<HttpRequestException>()
-            .Or<IOException>()
-            .OrResult<ChatResponseInfo>(x => string.IsNullOrWhiteSpace(x.Text) && x.Files.Count == 0)
-            .WaitAndRetryAsync(
-                sleepDurations,
-                (outcome, delay, retryNumber, _) => _logger.LogWarning(
-                    outcome.Exception,
-                    "Chat response attempt {RetryNumber} failed for chat {ChatId}; retrying in {Delay}",
-                    retryNumber,
-                    chatId,
-                    delay));
+        var retryPolicy = BuildChatResponseRetryPolicy(
+            sleepDurations,
+            (outcome, delay, retryNumber) => _logger.LogWarning(
+                outcome.Exception,
+                "Chat response attempt {RetryNumber} failed for chat {ChatId}; retrying in {Delay}",
+                retryNumber,
+                chatId,
+                delay));
 
         return await retryPolicy.ExecuteAsync(() => _chatService.GetResponseAsync(
             chatId,
@@ -108,6 +102,29 @@ public sealed class MentionHandler
             messageText,
             attachments
         ));
+    }
+
+    /// <summary>
+    /// Builds the chat-response retry policy. Transient ACP/IO failures, session-setup
+    /// handshake timeouts and empty results — which fail fast and may succeed on a fresh
+    /// session — are retried, but <see cref="AgyTurnTimeoutException"/> is deliberately not
+    /// handled: an over-budget turn would redo the same work and exhaust the budget again, so
+    /// it must run exactly once. Taking the sleep durations as a parameter keeps the policy
+    /// fast to exercise in tests.
+    /// </summary>
+    internal static IAsyncPolicy<ChatResponseInfo> BuildChatResponseRetryPolicy(
+        IEnumerable<TimeSpan> sleepDurations,
+        Action<DelegateResult<ChatResponseInfo>, TimeSpan, int> onRetry)
+    {
+        return Policy
+            .Handle<AcpException>()
+            .Or<TimeoutException>()
+            .Or<HttpRequestException>()
+            .Or<IOException>()
+            .OrResult<ChatResponseInfo>(x => string.IsNullOrWhiteSpace(x.Text) && x.Files.Count == 0)
+            .WaitAndRetryAsync(
+                sleepDurations,
+                (outcome, delay, retryNumber, _) => onRetry(outcome, delay, retryNumber));
     }
 
     private static string? PollToText(Poll? poll)
@@ -275,7 +292,7 @@ public sealed class MentionHandler
 
         // Short replies keep the classic MarkdownV2 message; anything longer than the regular
         // message limit is sent as a rich message, which allows up to MaxTelegramRichMessageLength
-        var replyText = response.Text.Cut(Const.MaxTelegramRichMessageLength);
+        var replyText = response.ToReplyText(Const.MaxTelegramRichMessageLength);
 
         if (string.IsNullOrWhiteSpace(replyText) && response.Files.Count == 0)
         {
@@ -286,7 +303,7 @@ public sealed class MentionHandler
         {
             if (replyText.Length > Const.MaxTelegramMessageLength)
             {
-                await SendRichReply(replyText);
+                await SendRichReply(replyText, response.ToReplyText(Const.MaxTelegramMessageLength));
             }
             else
             {
@@ -372,7 +389,9 @@ public sealed class MentionHandler
                 cancellationToken: cancellationToken);
         }
 
-        async Task SendRichReply(string text)
+        // plainTextFallback is pre-cut to the regular message limit by the caller, so a partial
+        // reply keeps its timeout notice even when rich delivery fails.
+        async Task SendRichReply(string text, string plainTextFallback)
         {
             var richMarkdownText = _markdownConversionService.ConvertToTelegramRichMarkdown(text);
 
@@ -389,7 +408,7 @@ public sealed class MentionHandler
             catch (Exception e)
             {
                 _logger.LogError(e, "Failed to send rich message. Falling back to cut plain text");
-                await SendReply(text.Cut(Const.MaxTelegramMessageLength), ParseMode.None);
+                await SendReply(plainTextFallback, ParseMode.None);
             }
         }
     }

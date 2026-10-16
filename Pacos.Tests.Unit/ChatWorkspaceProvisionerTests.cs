@@ -94,23 +94,57 @@ internal sealed class ChatWorkspaceProvisionerTests
     }
 
     [Test]
-    public void Provision_WhenRerun_ShouldKeepSteeringFileButRefreshSkills()
+    public void Provision_WhenRerun_ShouldKeepUpToDateSteeringFileAndRefreshSkills()
     {
-        var provisioner = CreateProvisioner();
+        var timeProvider = new FakeTimeProvider(SessionStart);
+        var provisioner = CreateProvisioner(timeProvider);
         provisioner.Provision(_workingDirectory, isGroupChat: false);
+        var originalSteering = File.ReadAllText(SteeringFilePath());
 
         var skillPath = SkillFilePath(AgentSkills.All[0].FolderName);
-        File.WriteAllText(SteeringFilePath(), "hand-edited steering file");
         File.WriteAllText(skillPath, "stale skill");
+        timeProvider.Advance(TimeSpan.FromHours(5));
 
         provisioner.Provision(_workingDirectory, isGroupChat: false);
 
         using (Assert.EnterMultipleScope())
         {
-            // The steering file ends with the session start stamp, so it must not be rewritten.
-            Assert.That(File.ReadAllText(SteeringFilePath()), Is.EqualTo("hand-edited steering file"));
+            // The steering file ends with the session start stamp, so a later turn must not move it.
+            Assert.That(File.ReadAllText(SteeringFilePath()), Is.EqualTo(originalSteering));
             Assert.That(File.ReadAllText(skillPath), Does.Contain(AgentSkills.All[0].Body));
         }
+    }
+
+    [Test]
+    public void Provision_WhenSteeringFileIsFromAnEarlierRelease_ShouldRefreshItButKeepTheSessionStart()
+    {
+        Directory.CreateDirectory(_workingDirectory);
+        File.WriteAllText(
+            SteeringFilePath(),
+            "# РОЛЬ\n- instructions from an earlier release\n\nДата начала текущей сессии: 2026-01-02 03:04:05");
+
+        CreateProvisioner().Provision(_workingDirectory, isGroupChat: false);
+
+        var steeringContent = File.ReadAllText(SteeringFilePath());
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(steeringContent, Does.StartWith(Const.SystemPrompt));
+            Assert.That(steeringContent, Does.Not.Contain("instructions from an earlier release"));
+            Assert.That(steeringContent, Does.EndWith("Дата начала текущей сессии: 2026-01-02 03:04:05"));
+        }
+    }
+
+    [Test]
+    public void Provision_WhenSteeringFileHasNoSessionStart_ShouldStampTheCurrentTime()
+    {
+        Directory.CreateDirectory(_workingDirectory);
+        File.WriteAllText(SteeringFilePath(), "legacy steering file without a stamp");
+
+        CreateProvisioner().Provision(_workingDirectory, isGroupChat: false);
+
+        Assert.That(
+            File.ReadAllText(SteeringFilePath()),
+            Does.EndWith("Дата начала текущей сессии: 2026-07-26 10:30:00"));
     }
 
     [Test]
@@ -161,11 +195,11 @@ internal sealed class ChatWorkspaceProvisionerTests
         await Verify(Normalize(skillContent), VerifySettings).UseParameters(folderName);
     }
 
-    private static ChatWorkspaceProvisioner CreateProvisioner()
+    private static ChatWorkspaceProvisioner CreateProvisioner(TimeProvider? timeProvider = null)
     {
         return new ChatWorkspaceProvisioner(
             NullLogger<ChatWorkspaceProvisioner>.Instance,
-            new FakeTimeProvider(SessionStart));
+            timeProvider ?? new FakeTimeProvider(SessionStart));
     }
 
     // The prompt text comes from raw string literals, so it carries the line endings of the

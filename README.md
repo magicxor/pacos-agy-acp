@@ -47,9 +47,9 @@ The bot reads its settings from environment variables or an `appsettings.json` f
 - `AgyAcpCommand`: Executable used to spawn the agy-acp adapter (default: `agy-acp`).
 - `AgyAcpArgs`: Extra command-line arguments passed to the agy-acp process.
 - `WorkingDirectoryRoot`: Root directory under which per-chat working directories are created (default: a folder under the system temp directory).
-- `AgyExtraArgs`: Extra arguments forwarded to every underlying `agy` invocation (via `AGY_EXTRA_ARGS`).
+- `AgyExtraArgs`: Extra arguments forwarded to every underlying `agy` invocation (via `AGY_EXTRA_ARGS`). Must not contain `--print-timeout` (startup validation rejects it); use `PromptTimeoutSeconds`.
 - `GeminiApiKey`: Optional Gemini API key passed to the agy subprocess for non-interactive auth. When empty, agy relies on its own persisted OAuth credentials (e.g. `~/.gemini`).
-- `PromptTimeoutSeconds`: Hard timeout for a single prompt round-trip to agy-acp (default: `300`).
+- `PromptTimeoutSeconds`: Per-turn budget (default: `300`). agy-acp ends a turn that runs this long and reports it as timed out (anything produced so far is still delivered; a turn with nothing usable fails once, without retries). agy's `--print-timeout` (+5%) and the Pacos `session/prompt` watchdog (+15%, and always at least 10s beyond the budget for the adapter's cleanup) are derived from it, so they can never fire first.
 - `SessionIdleTimeoutMinutes`: When a chat has been idle (no prompt to the agent) for longer than this, the next prompt starts a fresh session instead of resuming — and paying the tokens for — the stale conversation (default: `180`; `0` disables).
 - `AgyCommandRuleMode`: Which set of agy command-permission rules to write (`denyall` (default) or `off`).
 
