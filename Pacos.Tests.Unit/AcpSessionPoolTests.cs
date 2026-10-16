@@ -48,6 +48,32 @@ internal sealed class AcpSessionPoolTests
     }
 
     [Test]
+    public void BuildEnvironment_PassesTheTurnBudgetToTheAdapterAndABackstopToAgy()
+    {
+        var options = CreateOptions();
+        options.PromptTimeoutSeconds = 300;
+
+        var environment = AcpSessionPool.BuildEnvironment(options, -100111, []);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(environment[AcpSessionPool.TurnTimeoutEnvironmentVariable], Is.EqualTo("300"));
+            Assert.That(environment["AGY_EXTRA_ARGS"], Is.EqualTo("--print-timeout 315s"));
+        });
+    }
+
+    [Test]
+    public void BuildEnvironment_AppendsAgyExtraArgsAfterTheBackstop()
+    {
+        var options = CreateOptions();
+        options.AgyExtraArgs = "--model 'Gemini 3.5 Flash (High)'";
+
+        var environment = AcpSessionPool.BuildEnvironment(options, -100111, []);
+
+        Assert.That(environment["AGY_EXTRA_ARGS"], Is.EqualTo("--print-timeout 315s --model 'Gemini 3.5 Flash (High)'"));
+    }
+
+    [Test]
     public void BuildEnvironment_InjectsTheChatId()
     {
         var environment = AcpSessionPool.BuildEnvironment(CreateOptions(), -1001234567890, []);

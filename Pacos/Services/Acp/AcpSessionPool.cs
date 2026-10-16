@@ -26,6 +26,11 @@ public sealed class AcpSessionPool : IAsyncDisposable
     /// </summary>
     public const string TelegramChatIdEnvironmentVariable = "TELEGRAM_CHAT_ID";
 
+    /// <summary>
+    /// Per-turn deadline enforced by agy-acp itself (see <see cref="AgyTurnTimeouts.Turn"/>).
+    /// </summary>
+    public const string TurnTimeoutEnvironmentVariable = "AGY_ACP_TURN_TIMEOUT_SECS";
+
     private readonly ILogger<AcpSessionPool> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly string _command;
@@ -48,7 +53,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
         var value = options.Value;
         _command = value.AgyAcpCommand;
         _args = value.AgyAcpArgs;
-        _promptTimeout = TimeSpan.FromSeconds(value.PromptTimeoutSeconds);
+        _promptTimeout = AgyTurnTimeouts.FromBudget(value.PromptTimeoutSeconds).Watchdog;
         _idleTimeout = TimeSpan.FromMinutes(value.SessionIdleTimeoutMinutes);
         _root = ResolveRoot(value);
         _options = value;
@@ -102,12 +107,12 @@ public sealed class AcpSessionPool : IAsyncDisposable
 
     /// <summary>
     /// Sends a prompt for the given chat, creating or reusing its dedicated
-    /// agy-acp session. On timeout or protocol error the session is torn down so
+    /// agy-acp session. On a turn timeout or protocol error the session is torn down so
     /// the next prompt starts a fresh process. A quota failure (HTTP 429 /
     /// RESOURCE_EXHAUSTED) on the primary model is retried once on the configured
     /// fallback model, which is billed against a separate quota pool.
     /// </summary>
-    public async Task<string> PromptAsync(long chatId, string promptText, CancellationToken cancellationToken)
+    public async Task<AcpPromptResult> PromptAsync(long chatId, string promptText, CancellationToken cancellationToken)
     {
         var gate = _locks.GetOrAdd(chatId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
@@ -118,11 +123,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
             var session = await EnsureSessionAsync(chatId, modelOverride: null, cancellationToken);
             try
             {
-                return await session.Connection.PromptAsync(
-                    session.SessionId,
-                    promptText,
-                    _promptTimeout,
-                    cancellationToken);
+                return await RunPromptAsync(session, promptText, cancellationToken);
             }
             catch (AcpException e) when (_fallbackModel is not null && session.ModelOverride is null && e.IsQuotaError)
             {
@@ -130,7 +131,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
                 await RemoveSessionAsync(chatId);
                 return await PromptWithFallbackModelAsync(chatId, promptText, cancellationToken);
             }
-            catch (Exception e) when (e is TimeoutException or AcpException)
+            catch (Exception e) when (e is AcpException or AgyTurnTimeoutException)
             {
                 _logger.LogWarning(e, "agy-acp prompt failed for chat {ChatId}; tearing down session", chatId);
                 await RemoveSessionAsync(chatId);
@@ -149,7 +150,7 @@ public sealed class AcpSessionPool : IAsyncDisposable
     /// context of follow-up turns) until it is next torn down, after which the
     /// chat returns to the primary model.
     /// </summary>
-    private async Task<string> PromptWithFallbackModelAsync(long chatId, string promptText, CancellationToken cancellationToken)
+    private async Task<AcpPromptResult> PromptWithFallbackModelAsync(long chatId, string promptText, CancellationToken cancellationToken)
     {
         _logger.LogWarning(
             "Quota exhausted for chat {ChatId}; retrying once with fallback model {FallbackModel}",
@@ -159,17 +160,37 @@ public sealed class AcpSessionPool : IAsyncDisposable
         var session = await EnsureSessionAsync(chatId, _fallbackModel, cancellationToken);
         try
         {
+            return await RunPromptAsync(session, promptText, cancellationToken);
+        }
+        catch (Exception e) when (e is AcpException or AgyTurnTimeoutException)
+        {
+            _logger.LogWarning(e, "Fallback-model prompt failed for chat {ChatId}; tearing down session", chatId);
+            await RemoveSessionAsync(chatId);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Runs one turn. agy-acp ends an over-budget turn itself and reports it through
+    /// <see cref="AcpPromptResult.TimedOut"/>, so reaching the Pacos watchdog means agy-acp
+    /// stopped responding mid-turn. That still consumed the whole budget, so it is surfaced as
+    /// a non-retryable <see cref="AgyTurnTimeoutException"/> rather than as the plain
+    /// <see cref="TimeoutException"/> that session setup uses for its retryable handshake
+    /// timeouts.
+    /// </summary>
+    private async Task<AcpPromptResult> RunPromptAsync(ChatSession session, string promptText, CancellationToken cancellationToken)
+    {
+        try
+        {
             return await session.Connection.PromptAsync(
                 session.SessionId,
                 promptText,
                 _promptTimeout,
                 cancellationToken);
         }
-        catch (Exception e) when (e is TimeoutException or AcpException)
+        catch (TimeoutException e)
         {
-            _logger.LogWarning(e, "Fallback-model prompt failed for chat {ChatId}; tearing down session", chatId);
-            await RemoveSessionAsync(chatId);
-            throw;
+            throw new AgyTurnTimeoutException(e.Message, e);
         }
     }
 
@@ -326,11 +347,13 @@ public sealed class AcpSessionPool : IAsyncDisposable
 
         environment[TelegramChatIdEnvironmentVariable] = chatId.ToString(CultureInfo.InvariantCulture);
 
-        // agy >= 1.1.x caps headless runs with its own --print-timeout (default
-        // 5m), so align it with the bot's prompt timeout or longer turns would be
-        // cut short by the CLI default. Injected first so a user-supplied
-        // --print-timeout in AgyExtraArgs wins (later flags override earlier ones).
-        var extraArgs = string.Create(CultureInfo.InvariantCulture, $"--print-timeout {options.PromptTimeoutSeconds}s");
+        // The adapter enforces the turn budget itself; agy's --print-timeout is only the
+        // backstop beyond it (see AgyTurnTimeouts). PacosOptions validation rejects a
+        // --print-timeout in AgyExtraArgs, so these deadlines cannot be reordered.
+        var timeouts = AgyTurnTimeouts.FromBudget(options.PromptTimeoutSeconds);
+        environment[TurnTimeoutEnvironmentVariable] = ToWholeSeconds(timeouts.Turn);
+
+        var extraArgs = $"--print-timeout {ToWholeSeconds(timeouts.CliBackstop)}s";
         if (!string.IsNullOrWhiteSpace(options.AgyExtraArgs))
         {
             extraArgs = $"{extraArgs} {options.AgyExtraArgs}";
@@ -340,6 +363,9 @@ public sealed class AcpSessionPool : IAsyncDisposable
 
         return environment;
     }
+
+    private static string ToWholeSeconds(TimeSpan value)
+        => ((long)value.TotalSeconds).ToString(CultureInfo.InvariantCulture);
 
     public async ValueTask DisposeAsync()
     {

@@ -17,6 +17,82 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use types::*;
 
+/// Optional per-turn budget in whole seconds. When set, the adapter kills agy once the
+/// turn has run this long and reports `stopReason: "timeout"`, so the client learns
+/// explicitly that the budget — not some other failure — ended the turn. Unset, zero or
+/// unparsable disables the deadline (agy's own `--print-timeout` still applies).
+const TURN_TIMEOUT_ENV: &str = "AGY_ACP_TURN_TIMEOUT_SECS";
+const TIMEOUT_STOP_REASON: &str = "timeout";
+
+fn parse_turn_timeout(value: Option<&str>) -> Option<Duration> {
+    value
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|&secs| secs > 0)
+        .map(Duration::from_secs)
+}
+
+async fn turn_deadline(timeout: Option<Duration>) {
+    match timeout {
+        Some(timeout) => tokio::time::sleep(timeout).await,
+        None => std::future::pending::<()>().await,
+    }
+}
+
+/// How long to keep reading agy's stdout/stderr after agy itself has exited. A
+/// descendant that inherited one of the pipes (an MCP server, a tool subprocess) keeps
+/// it open past agy's exit, and an unbounded read would then never finish the turn.
+/// Pacos reserves a fixed cleanup allowance for this in its watchdog
+/// (`AgyTurnTimeouts.AdapterCleanupAllowance`), which must stay larger.
+const PIPE_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Starts agy as the leader of its own process group, so a stopped turn can take
+/// down every process agy spawned, not just agy.
+#[cfg(unix)]
+fn isolate_process_group(command: &mut Command) {
+    command.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn isolate_process_group(_command: &mut Command) {}
+
+/// Kills agy together with its descendants and reaps it. Killing only agy would leave
+/// its MCP servers and tool subprocesses running, possibly still holding its pipes.
+async fn terminate_turn(child: &mut tokio::process::Child) -> std::io::Result<std::process::ExitStatus> {
+    #[cfg(unix)]
+    if let Some(pid) = child.id().and_then(|pid| libc::pid_t::try_from(pid).ok()) {
+        // SAFETY: kill(2) has no memory-safety preconditions. agy is the leader of the group
+        // isolate_process_group created and has not been reaped yet, so the group id cannot
+        // have been reused by an unrelated process.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill().await;
+    child.wait().await
+}
+
+/// Collects what a pipe reader read, giving up after `PIPE_DRAIN_TIMEOUT`.
+async fn drain_pipe(reader: tokio::task::JoinHandle<Vec<u8>>, name: &str) -> Vec<u8> {
+    let abort = reader.abort_handle();
+    match tokio::time::timeout(PIPE_DRAIN_TIMEOUT, reader).await {
+        Ok(result) => result.unwrap_or_default(),
+        Err(_) => {
+            abort.abort();
+            eprintln!("[agy-acp] agy {name} still open {}s after agy exited; abandoning it", PIPE_DRAIN_TIMEOUT.as_secs());
+            Vec::new()
+        }
+    }
+}
+
+/// Drains agy's stdout and stderr concurrently, so the whole cleanup after agy exits
+/// takes at most one `PIPE_DRAIN_TIMEOUT` rather than one per pipe.
+async fn drain_pipes(
+    stdout: tokio::task::JoinHandle<Vec<u8>>,
+    stderr: tokio::task::JoinHandle<Vec<u8>>,
+) -> (Vec<u8>, Vec<u8>) {
+    tokio::join!(drain_pipe(stdout, "stdout"), drain_pipe(stderr, "stderr"))
+}
+
 impl Adapter {
     /// Execute prompt subprocess without holding any adapter lock.
     pub async fn execute_prompt(
@@ -39,14 +115,16 @@ impl Adapter {
         let log_pre_snapshot = snapshot_agy_logs(&conversations_dir);
         let spawn_time = std::time::SystemTime::now();
 
-        let spawn_result = Command::new(Adapter::agy_bin())
+        let mut command = Command::new(Adapter::agy_bin());
+        command
             .args(&args)
             .env("PATH", Adapter::augmented_path())
             .current_dir(&working_dir)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn();
+            .stderr(std::process::Stdio::piped());
+        isolate_process_group(&mut command);
+        let spawn_result = command.spawn();
 
         let mut child = match spawn_result {
             Ok(child) => child,
@@ -106,7 +184,9 @@ impl Adapter {
 
         let _stop_guard = StopGuard(Arc::clone(&stop_polling));
 
+        let turn_timeout = parse_turn_timeout(std::env::var(TURN_TIMEOUT_ENV).ok().as_deref());
         let mut was_cancelled = false;
+        let mut timed_out = false;
         let result = tokio::select! {
             result = child.wait() => result,
             _ = async {
@@ -115,13 +195,19 @@ impl Adapter {
                 }
             } => {
                 was_cancelled = true;
-                let _ = child.kill().await;
-                child.wait().await
+                terminate_turn(&mut child).await
+            }
+            _ = turn_deadline(turn_timeout) => {
+                timed_out = true;
+                eprintln!("[agy-acp] turn exceeded its {}s budget; killing agy", turn_timeout.map_or(0, |t| t.as_secs()));
+                terminate_turn(&mut child).await
             }
         };
+        // A turn this adapter stopped itself (cancel or deadline) is an explicit outcome,
+        // not a failure: it is reported through stopReason and never surfaced as an error.
+        let stopped_by_adapter = was_cancelled || timed_out;
 
-        let _ = stdout_reader.await;
-        let stderr_bytes = stderr_reader.await.unwrap_or_default();
+        let (_, stderr_bytes) = drain_pipes(stdout_reader, stderr_reader).await;
 
         stop_polling.store(true, Ordering::SeqCst);
         let _ = poller.join();
@@ -142,6 +228,7 @@ impl Adapter {
         let session_update = Some((bound_conv_id.clone(), new_step_idx));
 
         let stop_reason = if was_cancelled { "cancelled" }
+            else if timed_out { TIMEOUT_STOP_REASON }
             else if result.as_ref().map(|s| !s.success()).unwrap_or(false) { "error" }
             else { "end_turn" };
 
@@ -149,7 +236,7 @@ impl Adapter {
             Ok(status) => {
                 let stderr_text = String::from_utf8_lossy(&stderr_bytes);
                 if !stderr_text.is_empty() { eprintln!("[agy-acp] agy stderr: {}", stderr_text.trim_end()); }
-                if !was_cancelled && !status.success() {
+                if !stopped_by_adapter && !status.success() {
                     eprintln!("[agy-acp] WARN: agy exited with status: {}", status);
                 }
                 // agy hides the real failure cause in both of its failure modes:
@@ -160,13 +247,13 @@ impl Adapter {
                 // recorded only in its own cli.log. Scan it for every turn that
                 // produced no updates so the surfaced error carries the cause.
                 // See `decide_turn_error` for the full decision logic.
-                let log_error = if !was_cancelled && !had_updates {
+                let log_error = if !stopped_by_adapter && !had_updates {
                     detect_swallowed_agy_error(&conversations_dir, &log_pre_snapshot, spawn_time)
                 } else {
                     None
                 };
                 if let Some((code, msg)) = decide_turn_error(
-                    was_cancelled, status.success(), had_updates, &status.to_string(), &stderr_text, log_error.as_deref(),
+                    stopped_by_adapter, status.success(), had_updates, &status.to_string(), &stderr_text, log_error.as_deref(),
                 ) {
                     eprintln!("[agy-acp] surfacing turn error ({code}): {msg}");
                     return PromptOutput {
@@ -205,16 +292,18 @@ impl Adapter {
 /// nonzero exit it is appended to the generic stderr/status message (agy's
 /// stderr never names the actual cause); on a zero exit with no output it is
 /// surfaced on its own as -32603.
-/// Returns `Some((code, message))` when an error should be surfaced.
+/// Returns `Some((code, message))` when an error should be surfaced. A turn the
+/// adapter stopped itself (`stopped_by_adapter`: cancelled, or killed at the turn
+/// deadline) is never an error — its outcome is carried by the `stopReason`.
 fn decide_turn_error(
-    was_cancelled: bool,
+    stopped_by_adapter: bool,
     status_success: bool,
     had_updates: bool,
     status_display: &str,
     stderr_text: &str,
     log_error: Option<&str>,
 ) -> Option<(i32, String)> {
-    if was_cancelled || had_updates {
+    if stopped_by_adapter || had_updates {
         return None;
     }
     if !status_success {
@@ -1064,6 +1153,89 @@ E0707 08:34:23.910604  84 log.go:398] agent executor error: model unreachable: R
     #[test]
     fn test_decide_turn_error_cancelled_never_surfaces() {
         assert_eq!(decide_turn_error(true, false, false, "exit 1", "boom", Some("swallowed")), None);
+    }
+
+    #[test]
+    fn test_parse_turn_timeout_accepts_positive_seconds() {
+        assert_eq!(parse_turn_timeout(Some("300")), Some(Duration::from_secs(300)));
+        assert_eq!(parse_turn_timeout(Some(" 45 ")), Some(Duration::from_secs(45)));
+    }
+
+    #[test]
+    fn test_parse_turn_timeout_disabled_when_unset_zero_or_invalid() {
+        for value in [None, Some(""), Some("0"), Some("-5"), Some("5m"), Some("abc")] {
+            assert_eq!(parse_turn_timeout(value), None, "{value:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_turn_deadline_fires_after_timeout() {
+        let fired = tokio::time::timeout(Duration::from_secs(2), turn_deadline(Some(Duration::from_millis(10)))).await;
+        assert!(fired.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_turn_deadline_never_fires_when_disabled() {
+        let fired = tokio::time::timeout(Duration::from_millis(50), turn_deadline(None)).await;
+        assert!(fired.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_drain_pipe_returns_what_a_finished_reader_read() {
+        let reader = tokio::spawn(async { b"agy output".to_vec() });
+        assert_eq!(drain_pipe(reader, "stdout").await, b"agy output");
+    }
+
+    /// Both pipes held open by a descendant must cost one drain timeout, not two: the
+    /// Pacos watchdog only reserves a fixed cleanup allowance beyond the turn budget.
+    #[tokio::test]
+    async fn test_drain_pipes_bounds_two_stuck_pipes_by_a_single_timeout() {
+        let stuck = || tokio::spawn(async { std::future::pending::<Vec<u8>>().await });
+        let started = std::time::Instant::now();
+
+        let (stdout, stderr) = drain_pipes(stuck(), stuck()).await;
+
+        assert!(stdout.is_empty() && stderr.is_empty());
+        assert!(
+            started.elapsed() < PIPE_DRAIN_TIMEOUT + Duration::from_secs(2),
+            "draining took {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// A descendant that inherited agy's stderr must not keep a stopped turn from
+    /// finishing: terminate_turn kills the whole process group, so the pipe closes.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_terminate_turn_kills_descendants_holding_the_pipes() {
+        use tokio::io::AsyncBufReadExt;
+
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "sleep 60 & echo ready; sleep 60"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        isolate_process_group(&mut command);
+        let mut child = command.spawn().unwrap();
+
+        // Kill only once the background descendant exists, or there is nothing to leak.
+        let mut stdout = tokio::io::BufReader::new(child.stdout.take().unwrap());
+        let mut ready = String::new();
+        stdout.read_line(&mut ready).await.unwrap();
+        assert_eq!(ready.trim(), "ready");
+
+        let mut stderr = child.stderr.take().unwrap();
+        let reader = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            let _ = stderr.read_to_end(&mut buf).await;
+            buf
+        });
+
+        terminate_turn(&mut child).await.unwrap();
+
+        let closed = tokio::time::timeout(Duration::from_secs(3), reader).await;
+        assert!(closed.is_ok(), "a descendant still holds agy's stderr after terminate_turn");
     }
 
     #[test]

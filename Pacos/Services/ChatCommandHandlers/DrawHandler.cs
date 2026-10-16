@@ -94,7 +94,7 @@ public sealed class DrawHandler
             return;
         }
 
-        var caption = response.Text.Cut(Const.MaxTelegramCaptionLength);
+        var caption = response.ToReplyText(Const.MaxTelegramCaptionLength);
 
         if (response.Files.Count == 0)
         {

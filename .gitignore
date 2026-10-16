@@ -417,3 +417,5 @@ Pacos/mcp.json
 
 # Local docker compose secrets: web search provider API keys for the websearch-mcp sidecar.
 .env
+
+.serena/project.yml

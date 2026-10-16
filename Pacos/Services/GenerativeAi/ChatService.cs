@@ -61,7 +61,7 @@ public sealed class ChatService : IAsyncDisposable
 
             var prompt = BuildPrompt(messageText, inputFiles, workspace.OutputDirectory, workspace.TempDirectory);
 
-            var responseText = await _sessionPool.PromptAsync(chatId, prompt, CancellationToken.None);
+            var result = await _sessionPool.PromptAsync(chatId, prompt, CancellationToken.None);
 
             var outputFiles = workspace.CollectOutputFiles();
             if (outputFiles.Count > 0)
@@ -69,12 +69,30 @@ public sealed class ChatService : IAsyncDisposable
                 _logger.LogInformation("Agent produced {Count} output file(s) for chat {ChatId}", outputFiles.Count, chatId);
             }
 
-            return new ChatResponseInfo(responseText.Trim(), outputFiles);
+            return ToChatResponse(result, outputFiles);
         }
         finally
         {
             chatSemaphore.Release();
         }
+    }
+
+    /// <summary>
+    /// Combines a turn's text with the output files collected after it. A timed-out turn is
+    /// only a failure when it produced nothing usable: partial text or files written before
+    /// the deadline are still delivered, flagged as <see cref="ChatResponseInfo.TimedOut"/> so
+    /// the reply can say it is incomplete. Throwing (instead of returning the empty reply)
+    /// keeps the retry policy from rerunning a turn that already exhausted its budget.
+    /// </summary>
+    internal static ChatResponseInfo ToChatResponse(AcpPromptResult result, IReadOnlyList<OutputFile> outputFiles)
+    {
+        var responseText = result.Text.Trim();
+        if (result.TimedOut && responseText.Length == 0 && outputFiles.Count == 0)
+        {
+            throw new AgyTurnTimeoutException("agy turn hit its time budget without producing a reply");
+        }
+
+        return new ChatResponseInfo(responseText, outputFiles, result.TimedOut);
     }
 
     public async Task ResetChatHistoryAsync(long chatId)
