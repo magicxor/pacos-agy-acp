@@ -350,12 +350,20 @@ public sealed class MentionHandler
                 fileMetadata.MimeType);
 
             var media = await _telegramMediaService.DownloadMediaAsync(fileMetadata, botClient, cancellationToken);
+            var mimeType = fileMetadata.MimeType;
 
-            if (fileMetadata.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) && media.FileBytes is not null)
+            if (mimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) && media.FileBytes is not null)
             {
                 try
                 {
-                    media.FileBytes = await _videoConverter.ConvertAsync(media.FileBytes, maxFileSize, cancellationToken);
+                    var originalBytes = media.FileBytes;
+                    media.FileBytes = await _videoConverter.ConvertAsync(originalBytes, maxFileSize, cancellationToken);
+
+                    // The converter returns the input as-is when it fits, otherwise a transcoded MP4.
+                    if (!ReferenceEquals(media.FileBytes, originalBytes))
+                    {
+                        mimeType = "video/mp4";
+                    }
                 }
                 catch (Exception e)
                 {
@@ -376,7 +384,7 @@ public sealed class MentionHandler
                 return null;
             }
 
-            return new ChatInputFile(media.FileBytes, fileMetadata.MimeType, origin);
+            return new ChatInputFile(media.FileBytes, mimeType, origin);
         }
 
         async Task SendReply(string text, ParseMode parseMode)
