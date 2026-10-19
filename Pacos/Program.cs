@@ -71,6 +71,7 @@ public sealed class Program
 
                     services.AddSingleton<VideoConverter>();
                     services.AddSingleton<ImageDownscaler>();
+                    services.AddSingleton<InputImageNormalizer>();
                     services.AddSingleton<TimeProvider>(_ => TimeProvider.System);
                     services.AddSingleton<ITelegramBotClient>(s => new TelegramBotClient(
                             s.GetRequiredService<IOptions<PacosOptions>>().Value.TelegramBotApiKey,
