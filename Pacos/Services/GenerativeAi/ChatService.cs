@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using Pacos.Models;
 using Pacos.Services.Acp;
+using Pacos.Services.ImageConversion;
 
 namespace Pacos.Services.GenerativeAi;
 
@@ -18,16 +19,19 @@ public sealed class ChatService : IAsyncDisposable
     private readonly ILogger<ChatService> _logger;
     private readonly AcpSessionPool _sessionPool;
     private readonly ChatWorkspaceProvisioner _workspaceProvisioner;
+    private readonly InputImageNormalizer _inputImageNormalizer;
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _chatSemaphores = new();
 
     public ChatService(
         ILogger<ChatService> logger,
         AcpSessionPool sessionPool,
-        ChatWorkspaceProvisioner workspaceProvisioner)
+        ChatWorkspaceProvisioner workspaceProvisioner,
+        InputImageNormalizer inputImageNormalizer)
     {
         _logger = logger;
         _sessionPool = sessionPool;
         _workspaceProvisioner = workspaceProvisioner;
+        _inputImageNormalizer = inputImageNormalizer;
     }
 
     public async Task<ChatResponseInfo> GetResponseAsync(
@@ -50,8 +54,9 @@ public sealed class ChatService : IAsyncDisposable
             var inputFiles = new List<(string Path, ChatInputOrigin Origin)>();
             if (attachments is not null)
             {
-                foreach (var attachment in attachments)
+                foreach (var originalAttachment in attachments)
                 {
+                    var attachment = _inputImageNormalizer.Normalize(originalAttachment);
                     var resolvedName = ResolveFileName(attachment.MimeType, messageId, attachment.Origin);
                     var inputFilePath = workspace.WriteInputFile(attachment.Bytes, resolvedName);
                     inputFiles.Add((inputFilePath, attachment.Origin));
@@ -167,6 +172,7 @@ public sealed class ChatService : IAsyncDisposable
         "image/webp" => ".webp",
         "image/gif" => ".gif",
         "video/mp4" => ".mp4",
+        "video/webm" => ".webm",
         "audio/mpeg" => ".mp3",
         "audio/ogg" => ".ogg",
         "application/pdf" => ".pdf",
