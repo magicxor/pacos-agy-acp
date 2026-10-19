@@ -24,6 +24,11 @@ public sealed class TelegramMediaService
             { Audio: { } audio } => new TelegramFileMetadata(audio.FileId, audio.MimeType ?? "audio/mpeg", audio.FileSize),
             { Voice: { } voice } => new TelegramFileMetadata(voice.FileId, voice.MimeType ?? "audio/ogg", voice.FileSize),
             { Animation: { } animation } => new TelegramFileMetadata(animation.FileId, animation.MimeType ?? "video/mp4", animation.FileSize),
+            { Sticker: { IsVideo: true } sticker } => new TelegramFileMetadata(sticker.FileId, "video/webm", sticker.FileSize),
+            // Animated (.tgs Lottie) stickers can't be fed to the model; use their static .webp/.jpg thumbnail,
+            // which InputImageNormalizer re-encodes to PNG regardless of its actual format.
+            { Sticker: { IsAnimated: true, Thumbnail: { } thumbnail } } => new TelegramFileMetadata(thumbnail.FileId, "image/webp", thumbnail.FileSize),
+            { Sticker.IsAnimated: true } => null,
             { Sticker: { } sticker } => new TelegramFileMetadata(sticker.FileId, sticker.Type == StickerType.Regular ? "image/webp" : "application/octet-stream", sticker.FileSize),
             { Document: { } document } when !string.IsNullOrEmpty(document.MimeType) => new TelegramFileMetadata(document.FileId, document.MimeType, document.FileSize),
             _ => null,
