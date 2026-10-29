@@ -6,13 +6,12 @@ using Pacos.Services.BackgroundTasks;
 using Pacos.Services.ChatCommandHandlers;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
-using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
 namespace Pacos.Services;
 
-public sealed class TelegramBotService
+public sealed class TelegramBotService : ITelegramUpdateDispatcher
 {
     private readonly ILogger<TelegramBotService> _logger;
     private readonly IOptions<PacosOptions> _options;
@@ -21,11 +20,10 @@ public sealed class TelegramBotService
     private readonly DrawHandler _drawHandler;
     private readonly ResetHandler _resetHandler;
     private readonly MentionHandler _mentionHandler;
+    private readonly TelegramWebhookSecret _webhookSecret;
+    private readonly TelegramLongPollingReceiver _longPollingReceiver;
 
-    private static readonly ReceiverOptions ReceiverOptions = new()
-    {
-        AllowedUpdates = [UpdateType.Message],
-    };
+    private static readonly UpdateType[] AllowedUpdates = [UpdateType.Message];
 
     public TelegramBotService(
         ILogger<TelegramBotService> logger,
@@ -34,7 +32,9 @@ public sealed class TelegramBotService
         IBackgroundTaskQueue taskQueue,
         DrawHandler drawHandler,
         ResetHandler resetHandler,
-        MentionHandler mentionHandler)
+        MentionHandler mentionHandler,
+        TelegramWebhookSecret webhookSecret,
+        TelegramLongPollingReceiver longPollingReceiver)
     {
         _logger = logger;
         _options = options;
@@ -43,16 +43,16 @@ public sealed class TelegramBotService
         _drawHandler = drawHandler;
         _resetHandler = resetHandler;
         _mentionHandler = mentionHandler;
+        _webhookSecret = webhookSecret;
+        _longPollingReceiver = longPollingReceiver;
     }
 
-    private async Task HandleUpdateAsync(ITelegramBotClient botClient,
-        Update update,
-        CancellationToken cancellationToken)
+    public async Task EnqueueUpdateAsync(Update update, CancellationToken cancellationToken)
     {
         _logger.LogDebug("Received update with type={Update}", update.Type.ToString());
 
         await _taskQueue.QueueBackgroundWorkItemAsync(async token =>
-            await HandleUpdateFunctionAsync(botClient, update, token));
+            await HandleUpdateFunctionAsync(_telegramBotClient, update, token));
     }
 
     private async Task HandleUpdateFunctionAsync(
@@ -106,33 +106,42 @@ public sealed class TelegramBotService
         }
     }
 
-    private Task HandlePollingErrorAsync(ITelegramBotClient botClient,
-        Exception exception,
-        CancellationToken cancellationToken)
+    private async Task DeleteWebhookAsync(CancellationToken cancellationToken)
     {
-        if (exception is ApiRequestException apiRequestException)
+        try
         {
-            _logger.LogError(exception,
-                "Telegram API Error. ErrorCode={ErrorCode}, RetryAfter={RetryAfter}, MigrateToChatId={MigrateToChatId}",
-                apiRequestException.ErrorCode,
-                apiRequestException.Parameters?.RetryAfter,
-                apiRequestException.Parameters?.MigrateToChatId);
+            await _telegramBotClient.DeleteWebhook(cancellationToken: cancellationToken);
         }
-        else
+        catch (RequestException e)
         {
-            _logger.LogError(exception, "Telegram API Error");
+            // Polling still starts: a lingering webhook then surfaces as logged getUpdates
+            // conflicts, retried every few seconds, instead of keeping the bot down.
+            _logger.LogWarning(e, "Failed to delete the Telegram webhook before starting long polling");
         }
-
-        return Task.CompletedTask;
     }
 
-    public void Start(CancellationToken cancellationToken)
+    /// <summary>
+    /// With a webhook URL configured, registers the webhook and returns; otherwise long-polls
+    /// until <paramref name="cancellationToken"/> is cancelled.
+    /// </summary>
+    public async Task RunAsync(CancellationToken cancellationToken)
     {
-        _telegramBotClient.StartReceiving(
-            updateHandler: HandleUpdateAsync,
-            errorHandler: HandlePollingErrorAsync,
-            receiverOptions: ReceiverOptions,
-            cancellationToken: cancellationToken
-        );
+        if (_options.Value.WebhookUrl is { } webhookUrl)
+        {
+            // A single connection makes Telegram deliver updates one by one and in order, as long polling does.
+            await _telegramBotClient.SetWebhook(
+                webhookUrl.AbsoluteUri,
+                maxConnections: 1,
+                allowedUpdates: AllowedUpdates,
+                secretToken: _webhookSecret.Value,
+                cancellationToken: cancellationToken);
+            _logger.LogInformation("Receiving Telegram updates via webhook {WebhookUrl}", webhookUrl);
+            return;
+        }
+
+        // getUpdates is refused for as long as a webhook is registered, e.g. by an earlier run.
+        await DeleteWebhookAsync(cancellationToken);
+        _logger.LogInformation("Receiving Telegram updates via long polling");
+        await _longPollingReceiver.ReceiveAsync(this, AllowedUpdates, cancellationToken);
     }
 }

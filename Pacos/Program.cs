@@ -5,6 +5,7 @@ using NLog.Config;
 using NLog.Extensions.Logging;
 using NTextCat;
 using Pacos.Enums;
+using Pacos.Extensions;
 using Pacos.Models.Options;
 using Pacos.Services;
 using Pacos.Services.Acp;
@@ -98,9 +99,25 @@ public sealed class Program
                     services.AddSingleton<DrawHandler>();
                     services.AddSingleton<ResetHandler>();
                     services.AddSingleton<MentionHandler>();
+                    services.AddSingleton<TelegramWebhookSecret>();
+                    services.AddSingleton<TelegramLongPollingReceiver>();
                     services.AddSingleton<TelegramBotService>();
+                    services.AddSingleton<ITelegramUpdateDispatcher>(s => s.GetRequiredService<TelegramBotService>());
+                    services.AddSingleton<TelegramWebhookHandler>();
                     services.AddHostedService<Worker>();
                 })
+                .ConfigureWebHostDefaults(webBuilder => webBuilder.Configure(app =>
+                {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                    {
+                        // Without a webhook URL the bot long-polls and serves no endpoints at all.
+                        if (endpoints.ServiceProvider.GetRequiredService<IOptions<PacosOptions>>().Value.WebhookUrl is { } webhookUrl)
+                        {
+                            endpoints.MapTelegramWebhook(webhookUrl);
+                        }
+                    });
+                }))
                 .Build();
 
             host.Run();
