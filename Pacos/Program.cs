@@ -59,14 +59,23 @@ public sealed class Program
                     // security policy above only allows MCP tools for these servers.
                     services.AddHostedService<AgyMcpConfigHostedService>();
 
-                    var telegramRequestTimeout = TimeSpan.FromSeconds(40);
+                    // The static Timeout values only feed options validation (set to the upper
+                    // bound); at runtime the generators pick the deadline per request.
                     services.AddHttpClient(nameof(HttpClientType.Telegram), httpClient => httpClient.Timeout = Timeout.InfiniteTimeSpan)
                         .AddDefaultLogger()
                         .AddStandardResilienceHandler(x =>
                         {
-                            x.AttemptTimeout = new HttpTimeoutStrategyOptions { Timeout = telegramRequestTimeout };
-                            x.TotalRequestTimeout = new HttpTimeoutStrategyOptions { Timeout = x.AttemptTimeout.Timeout * 2 };
-                            x.CircuitBreaker.SamplingDuration = x.AttemptTimeout.Timeout * 2;
+                            x.AttemptTimeout = new HttpTimeoutStrategyOptions
+                            {
+                                Timeout = TelegramRequestTimeouts.UploadAttempt,
+                                TimeoutGenerator = static args => ValueTask.FromResult(TelegramRequestTimeouts.GetAttemptTimeout(args.Context)),
+                            };
+                            x.TotalRequestTimeout = new HttpTimeoutStrategyOptions
+                            {
+                                Timeout = TelegramRequestTimeouts.UploadAttempt * 2,
+                                TimeoutGenerator = static args => ValueTask.FromResult(TelegramRequestTimeouts.GetAttemptTimeout(args.Context) * 2),
+                            };
+                            x.CircuitBreaker.SamplingDuration = TelegramRequestTimeouts.UploadAttempt * 2;
                         });
 
                     services.AddSingleton<VideoConverter>();
