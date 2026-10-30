@@ -8,16 +8,18 @@ internal sealed class RecordingUpdateDispatcher : ITelegramUpdateDispatcher
     public List<Update> Updates { get; } = [];
 
     /// <summary>
-    /// Makes the next call fail the way an aborted request or a shutdown does while the queue is full.
+    /// One-shot: the next call returns this task instead of recording its update, e.g. a
+    /// cancelled one for a request aborted while the queue is full, or a pending one for a write
+    /// still waiting for queue space.
     /// </summary>
-    public bool CancelNextCall { get; set; }
+    public Task? NextCallOutcome { get; set; }
 
     public Task EnqueueUpdateAsync(Update update, CancellationToken cancellationToken)
     {
-        if (CancelNextCall)
+        if (NextCallOutcome is { } outcome)
         {
-            CancelNextCall = false;
-            return Task.FromCanceled(new CancellationToken(canceled: true));
+            NextCallOutcome = null;
+            return outcome;
         }
 
         Updates.Add(update);

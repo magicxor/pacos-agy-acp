@@ -85,7 +85,7 @@ internal sealed class TelegramWebhookHandlerTests
     public async Task HandleAsync_DeliveryCancelledBeforeQueueing_AcceptsTheRepeat()
     {
         var secret = new TelegramWebhookSecret();
-        var dispatcher = new RecordingUpdateDispatcher { CancelNextCall = true, };
+        var dispatcher = new RecordingUpdateDispatcher { NextCallOutcome = Task.FromCanceled(new CancellationToken(canceled: true)), };
         var handler = CreateHandler(secret, dispatcher);
 
         Assert.CatchAsync<OperationCanceledException>(() => HandleAsync(handler, secret.Value, UpdateJson));
@@ -94,6 +94,37 @@ internal sealed class TelegramWebhookHandlerTests
         Assert.Multiple(() =>
         {
             Assert.That(repeat, Is.InstanceOf<Ok>());
+            Assert.That(dispatcher.Updates, Has.Count.EqualTo(1));
+        });
+    }
+
+    /// <summary>
+    /// A repeat that arrives while the original delivery is still waiting for queue space must
+    /// not be acknowledged: the original may yet be cancelled, and the update would be lost.
+    /// </summary>
+    [Test]
+    public async Task HandleAsync_RepeatWhileTheOriginalIsStillQueueing_AsksTelegramToRetryLater()
+    {
+        var secret = new TelegramWebhookSecret();
+        var pendingWrite = new TaskCompletionSource();
+        var dispatcher = new RecordingUpdateDispatcher { NextCallOutcome = pendingWrite.Task, };
+        var handler = CreateHandler(secret, dispatcher);
+
+        var original = HandleAsync(handler, secret.Value, UpdateJson);
+        var originalIsQueueing = SpinWait.SpinUntil(() => dispatcher.NextCallOutcome is null, TimeSpan.FromSeconds(10));
+        var repeatWhileQueueing = await HandleAsync(handler, secret.Value, UpdateJson);
+        pendingWrite.SetCanceled();
+        Assert.CatchAsync<OperationCanceledException>(() => original);
+        var repeatAfterCancellation = await HandleAsync(handler, secret.Value, UpdateJson);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(originalIsQueueing, Is.True);
+            Assert.That(
+                repeatWhileQueueing,
+                Is.InstanceOf<StatusCodeHttpResult>()
+                    .With.Property(nameof(StatusCodeHttpResult.StatusCode)).EqualTo(StatusCodes.Status503ServiceUnavailable));
+            Assert.That(repeatAfterCancellation, Is.InstanceOf<Ok>());
             Assert.That(dispatcher.Updates, Has.Count.EqualTo(1));
         });
     }

@@ -1,38 +1,61 @@
+using Pacos.Enums;
+
 namespace Pacos.Services;
 
 /// <summary>
-/// Remembers the ids of recently accepted webhook updates. Telegram delivers webhooks at least
+/// Tracks webhook updates by id so each is queued once. Telegram delivers webhooks at least
 /// once: it repeats a delivery whenever it misses the 200 response, even if the update was
 /// already queued, and handling the repeat would run the same command twice.
 /// </summary>
 public sealed class TelegramUpdateDeduplicator
 {
-    // Repeats follow the original within minutes, so a short history of ids is enough.
+    // Repeats follow the original within minutes, so a short history of queued ids is enough.
     internal const int Capacity = 1000;
 
     private readonly Lock _lock = new();
-    private readonly HashSet<int> _reservedIds = [];
-    private readonly Queue<int> _reservationOrder = new();
+    private readonly HashSet<int> _inProgressIds = [];
+    private readonly HashSet<int> _queuedIds = [];
+    private readonly Queue<int> _queuedOrder = new();
 
     /// <summary>
-    /// Reserves <paramref name="updateId"/>; returns <see langword="false"/> when it is already reserved.
+    /// Reserves <paramref name="updateId"/> unless another delivery is queueing it or already has.
+    /// After <see cref="UpdateReservation.Acquired"/> the caller must end with
+    /// <see cref="MarkQueued"/> or <see cref="Release"/>.
     /// </summary>
-    public bool TryReserve(int updateId)
+    public UpdateReservation Reserve(int updateId)
     {
         lock (_lock)
         {
-            if (!_reservedIds.Add(updateId))
+            if (_queuedIds.Contains(updateId))
             {
-                return false;
+                return UpdateReservation.AlreadyQueued;
             }
 
-            _reservationOrder.Enqueue(updateId);
-            if (_reservationOrder.Count > Capacity)
+            return _inProgressIds.Add(updateId) ? UpdateReservation.Acquired : UpdateReservation.InProgress;
+        }
+    }
+
+    /// <summary>
+    /// Records that the reserved update was queued, so its repeats are ignored from now on.
+    /// </summary>
+    public void MarkQueued(int updateId)
+    {
+        lock (_lock)
+        {
+            _inProgressIds.Remove(updateId);
+
+            // An id enters the history and the eviction order together and leaves both on
+            // eviction, so the order never holds a stale entry that could evict a newer one.
+            if (!_queuedIds.Add(updateId))
             {
-                _reservedIds.Remove(_reservationOrder.Dequeue());
+                return;
             }
 
-            return true;
+            _queuedOrder.Enqueue(updateId);
+            if (_queuedOrder.Count > Capacity)
+            {
+                _queuedIds.Remove(_queuedOrder.Dequeue());
+            }
         }
     }
 
@@ -43,9 +66,7 @@ public sealed class TelegramUpdateDeduplicator
     {
         lock (_lock)
         {
-            // The id stays in the eviction order; evicting that stale entry later only forgets
-            // the id a little early, long after Telegram would repeat it.
-            _reservedIds.Remove(updateId);
+            _inProgressIds.Remove(updateId);
         }
     }
 }

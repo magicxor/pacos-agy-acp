@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Pacos.Enums;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 
@@ -55,21 +56,39 @@ public sealed class TelegramWebhookHandler
             return TypedResults.BadRequest();
         }
 
-        if (!_updateDeduplicator.TryReserve(update.Id))
+        var reservation = _updateDeduplicator.Reserve(update.Id);
+        if (reservation == UpdateReservation.AlreadyQueued)
         {
             _logger.LogInformation("Ignored a repeated Telegram webhook delivery of update {UpdateId}", update.Id);
             return TypedResults.Ok();
         }
 
+        if (reservation == UpdateReservation.InProgress)
+        {
+            // The earlier delivery may still fail to queue the update, so this one must not be
+            // acknowledged; Telegram retries it once the outcome is known.
+            _logger.LogInformation("Deferred a repeated Telegram webhook delivery of update {UpdateId} that is still being queued", update.Id);
+            return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var queued = false;
         try
         {
             await _updateDispatcher.EnqueueUpdateAsync(update, cancellationToken);
+            queued = true;
         }
-        catch (OperationCanceledException)
+        finally
         {
-            // Telegram gave up on this delivery before the update was queued; let its repeat through.
-            _updateDeduplicator.Release(update.Id);
-            throw;
+            // A failed write (e.g. Telegram gave up on this delivery while the queue was full)
+            // frees the update for Telegram's repeat.
+            if (queued)
+            {
+                _updateDeduplicator.MarkQueued(update.Id);
+            }
+            else
+            {
+                _updateDeduplicator.Release(update.Id);
+            }
         }
 
         return TypedResults.Ok();
