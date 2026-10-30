@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 using NLog;
 using NLog.Config;
@@ -62,20 +61,16 @@ public sealed class Program
 
                     // The static Timeout values only feed options validation (set to the upper
                     // bound); at runtime the generators pick the deadline per request.
+                    // The default timeout options are modified in place to keep their names
+                    // (Standard-AttemptTimeout / Standard-TotalRequestTimeout) in resilience logs.
                     services.AddHttpClient(nameof(HttpClientType.Telegram), httpClient => httpClient.Timeout = Timeout.InfiniteTimeSpan)
                         .AddDefaultLogger()
                         .AddStandardResilienceHandler(x =>
                         {
-                            x.AttemptTimeout = new HttpTimeoutStrategyOptions
-                            {
-                                Timeout = TelegramRequestTimeouts.UploadAttempt,
-                                TimeoutGenerator = static args => ValueTask.FromResult(TelegramRequestTimeouts.GetAttemptTimeout(args.Context)),
-                            };
-                            x.TotalRequestTimeout = new HttpTimeoutStrategyOptions
-                            {
-                                Timeout = TelegramRequestTimeouts.UploadAttempt * 2,
-                                TimeoutGenerator = static args => ValueTask.FromResult(TelegramRequestTimeouts.GetAttemptTimeout(args.Context) * 2),
-                            };
+                            x.AttemptTimeout.Timeout = TelegramRequestTimeouts.UploadAttempt;
+                            x.AttemptTimeout.TimeoutGenerator = static args => ValueTask.FromResult(TelegramRequestTimeouts.GetAttemptTimeout(args.Context));
+                            x.TotalRequestTimeout.Timeout = TelegramRequestTimeouts.UploadTotal;
+                            x.TotalRequestTimeout.TimeoutGenerator = static args => ValueTask.FromResult(TelegramRequestTimeouts.GetTotalTimeout(args.Context));
                             x.CircuitBreaker.SamplingDuration = TelegramRequestTimeouts.UploadAttempt * 2;
                         });
 
