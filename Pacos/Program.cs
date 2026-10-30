@@ -5,6 +5,7 @@ using NLog.Config;
 using NLog.Extensions.Logging;
 using NTextCat;
 using Pacos.Enums;
+using Pacos.Extensions;
 using Pacos.Models.Options;
 using Pacos.Services;
 using Pacos.Services.Acp;
@@ -59,14 +60,23 @@ public sealed class Program
                     // security policy above only allows MCP tools for these servers.
                     services.AddHostedService<AgyMcpConfigHostedService>();
 
-                    var telegramRequestTimeout = TimeSpan.FromSeconds(40);
+                    // The static Timeout values only feed options validation (set to the upper
+                    // bound); at runtime the generators pick the deadline per request.
                     services.AddHttpClient(nameof(HttpClientType.Telegram), httpClient => httpClient.Timeout = Timeout.InfiniteTimeSpan)
                         .AddDefaultLogger()
                         .AddStandardResilienceHandler(x =>
                         {
-                            x.AttemptTimeout = new HttpTimeoutStrategyOptions { Timeout = telegramRequestTimeout };
-                            x.TotalRequestTimeout = new HttpTimeoutStrategyOptions { Timeout = x.AttemptTimeout.Timeout * 2 };
-                            x.CircuitBreaker.SamplingDuration = x.AttemptTimeout.Timeout * 2;
+                            x.AttemptTimeout = new HttpTimeoutStrategyOptions
+                            {
+                                Timeout = TelegramRequestTimeouts.UploadAttempt,
+                                TimeoutGenerator = static args => ValueTask.FromResult(TelegramRequestTimeouts.GetAttemptTimeout(args.Context)),
+                            };
+                            x.TotalRequestTimeout = new HttpTimeoutStrategyOptions
+                            {
+                                Timeout = TelegramRequestTimeouts.UploadAttempt * 2,
+                                TimeoutGenerator = static args => ValueTask.FromResult(TelegramRequestTimeouts.GetAttemptTimeout(args.Context) * 2),
+                            };
+                            x.CircuitBreaker.SamplingDuration = TelegramRequestTimeouts.UploadAttempt * 2;
                         });
 
                     services.AddSingleton<VideoConverter>();
@@ -89,9 +99,26 @@ public sealed class Program
                     services.AddSingleton<DrawHandler>();
                     services.AddSingleton<ResetHandler>();
                     services.AddSingleton<MentionHandler>();
+                    services.AddSingleton<TelegramWebhookSecret>();
+                    services.AddSingleton<TelegramLongPollingReceiver>();
                     services.AddSingleton<TelegramBotService>();
+                    services.AddSingleton<ITelegramUpdateDispatcher>(s => s.GetRequiredService<TelegramBotService>());
+                    services.AddSingleton<TelegramUpdateDeduplicator>();
+                    services.AddSingleton<TelegramWebhookHandler>();
                     services.AddHostedService<Worker>();
                 })
+                .ConfigureWebHostDefaults(webBuilder => webBuilder.Configure(app =>
+                {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                    {
+                        // Without a webhook URL the bot long-polls and serves no endpoints at all.
+                        if (endpoints.ServiceProvider.GetRequiredService<IOptions<PacosOptions>>().Value.WebhookUrl is { } webhookUrl)
+                        {
+                            endpoints.MapTelegramWebhook(webhookUrl);
+                        }
+                    });
+                }))
                 .Build();
 
             host.Run();

@@ -80,6 +80,10 @@ jobs:
             export PACOS__CHATMODEL='${{ vars.PACOS__CHATMODEL }}'
             # Optional; empty disables the quota-error fallback.
             export PACOS__FALLBACKCHATMODEL='${{ vars.PACOS__FALLBACKCHATMODEL }}'
+            # Optional; empty keeps the bot on long polling. When set, the host nginx must proxy
+            # this URL to 127.0.0.1:PACOS_HTTP_PORT (a different port per environment).
+            export PACOS__WEBHOOKURL='${{ vars.PACOS__WEBHOOKURL }}'
+            export PACOS_HTTP_PORT='${{ vars.PACOS_HTTP_PORT }}'
             # Shared bearer token for the crawl4ai sidecar. docker-compose.deploy.yml interpolates
             # it into both the crawl4ai service (CRAWL4AI_API_TOKEN) and the pacos service
             # (Pacos__Crawl4AiApiToken), so the sidecar binds 0.0.0.0 and the MCP authenticates.

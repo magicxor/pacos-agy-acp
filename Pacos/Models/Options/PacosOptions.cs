@@ -15,6 +15,16 @@ public sealed class PacosOptions
     public required long[] AllowedChatIds { get; set; }
 
     /// <summary>
+    /// Optional public HTTPS URL Telegram delivers updates to, e.g.
+    /// <c>https://pacos.example.com/telegram/webhook</c>. When set, the bot registers this
+    /// webhook on startup (with a secret token generated per run) and serves it on the URL's
+    /// path, so a reverse proxy must forward that path unchanged to the container's HTTP port.
+    /// When empty, the bot deletes any registered webhook and receives updates by long polling.
+    /// </summary>
+    [AbsoluteHttpsUri]
+    public Uri? WebhookUrl { get; set; }
+
+    /// <summary>
     /// Name of the model written into the agy permission policy
     /// (the <c>model</c> field of <c>settings.json</c>), e.g.
     /// <c>Gemini 3.5 Flash (High)</c>.
