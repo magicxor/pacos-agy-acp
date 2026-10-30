@@ -78,6 +78,7 @@ internal sealed class TelegramWebhookEndpointRouteBuilderExtensionsTests
         builder.Logging.ClearProviders();
         builder.Services.AddSingleton(secret);
         builder.Services.AddSingleton<ITelegramUpdateDispatcher>(dispatcher);
+        builder.Services.AddSingleton<TelegramUpdateDeduplicator>();
         builder.Services.AddSingleton<TelegramWebhookHandler>();
 
         var app = builder.Build();

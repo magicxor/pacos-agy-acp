@@ -103,6 +103,7 @@ public sealed class Program
                     services.AddSingleton<TelegramLongPollingReceiver>();
                     services.AddSingleton<TelegramBotService>();
                     services.AddSingleton<ITelegramUpdateDispatcher>(s => s.GetRequiredService<TelegramBotService>());
+                    services.AddSingleton<TelegramUpdateDeduplicator>();
                     services.AddSingleton<TelegramWebhookHandler>();
                     services.AddHostedService<Worker>();
                 })

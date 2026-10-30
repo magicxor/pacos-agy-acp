@@ -10,6 +10,7 @@ namespace Pacos.Tests.Unit;
 /// <summary>
 /// Answers getUpdates calls from a script, one step per call (a step may throw to simulate a
 /// failed poll). Once the script runs out it cancels polling, the way a host shutdown would.
+/// deleteWebhook calls succeed unless <see cref="DeleteWebhookScript"/> holds a step for them.
 /// </summary>
 internal sealed class ScriptedTelegramBotClient : ITelegramBotClient
 {
@@ -34,7 +35,11 @@ internal sealed class ScriptedTelegramBotClient : ITelegramBotClient
         remove { /* Never raised: the fake makes no HTTP calls. */ }
     }
 
-    public List<GetUpdatesRequest> GetUpdatesRequests { get; } = [];
+    public List<object> Requests { get; } = [];
+
+    public List<GetUpdatesRequest> GetUpdatesRequests => [.. Requests.OfType<GetUpdatesRequest>()];
+
+    public Queue<Func<bool>> DeleteWebhookScript { get; } = new();
 
     public bool LocalBotServer => false;
 
@@ -46,12 +51,17 @@ internal sealed class ScriptedTelegramBotClient : ITelegramBotClient
 
     public async Task<TResponse> SendRequest<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
     {
-        if (request is not GetUpdatesRequest getUpdatesRequest)
+        if (request is not (GetUpdatesRequest or DeleteWebhookRequest))
         {
             throw new NotSupportedException($"Unexpected request {request.MethodName}");
         }
 
-        GetUpdatesRequests.Add(getUpdatesRequest);
+        Requests.Add(request);
+
+        if (request is DeleteWebhookRequest)
+        {
+            return (TResponse)(object)(!DeleteWebhookScript.TryDequeue(out var deleteStep) || deleteStep());
+        }
 
         if (_getUpdatesScript.TryDequeue(out var step))
         {

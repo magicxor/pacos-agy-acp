@@ -34,21 +34,30 @@ public sealed class TelegramLongPollingReceiver
     }
 
     /// <summary>
-    /// Polls until <paramref name="cancellationToken"/> is cancelled (then throws
-    /// <see cref="OperationCanceledException"/>), handing every update to
-    /// <paramref name="dispatcher"/> in order. A failed poll is logged and retried after a pause.
+    /// Deletes any registered webhook, then polls until <paramref name="cancellationToken"/> is
+    /// cancelled (then throws <see cref="OperationCanceledException"/>), handing every update to
+    /// <paramref name="dispatcher"/> in order. A failed call is logged and retried after a pause.
     /// </summary>
     public async Task ReceiveAsync(
         ITelegramUpdateDispatcher dispatcher,
         IEnumerable<UpdateType> allowedUpdates,
         CancellationToken cancellationToken)
     {
+        var webhookDeleted = false;
         int? offset = null;
         while (!cancellationToken.IsCancellationRequested)
         {
             Update[] updates;
             try
             {
+                if (!webhookDeleted)
+                {
+                    // getUpdates is refused with 409 Conflict for as long as a webhook is registered
+                    // (e.g. by an earlier run in webhook mode), so polling waits for the deletion.
+                    await _botClient.DeleteWebhook(cancellationToken: cancellationToken);
+                    webhookDeleted = true;
+                }
+
                 updates = await _botClient.GetUpdates(offset, UpdateLimit, LongPollingSeconds, allowedUpdates, cancellationToken);
             }
             catch (RequestException e) when (cancellationToken.IsCancellationRequested)

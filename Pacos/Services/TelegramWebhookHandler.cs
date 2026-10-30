@@ -5,8 +5,9 @@ using Telegram.Bot.Types;
 namespace Pacos.Services;
 
 /// <summary>
-/// Accepts Telegram webhook requests: verifies the secret token, parses the update and hands
-/// it to the background queue, answering at once so Telegram never retries a slow delivery.
+/// Accepts Telegram webhook requests: verifies the secret token, parses the update, drops
+/// repeated deliveries and hands the rest to the background queue, answering at once so
+/// Telegram never retries a slow delivery.
 /// </summary>
 public sealed class TelegramWebhookHandler
 {
@@ -15,15 +16,18 @@ public sealed class TelegramWebhookHandler
     private readonly ILogger<TelegramWebhookHandler> _logger;
     private readonly TelegramWebhookSecret _webhookSecret;
     private readonly ITelegramUpdateDispatcher _updateDispatcher;
+    private readonly TelegramUpdateDeduplicator _updateDeduplicator;
 
     public TelegramWebhookHandler(
         ILogger<TelegramWebhookHandler> logger,
         TelegramWebhookSecret webhookSecret,
-        ITelegramUpdateDispatcher updateDispatcher)
+        ITelegramUpdateDispatcher updateDispatcher,
+        TelegramUpdateDeduplicator updateDeduplicator)
     {
         _logger = logger;
         _webhookSecret = webhookSecret;
         _updateDispatcher = updateDispatcher;
+        _updateDeduplicator = updateDeduplicator;
     }
 
     public async Task<IResult> HandleAsync(HttpRequest request, CancellationToken cancellationToken)
@@ -51,7 +55,23 @@ public sealed class TelegramWebhookHandler
             return TypedResults.BadRequest();
         }
 
-        await _updateDispatcher.EnqueueUpdateAsync(update, cancellationToken);
+        if (!_updateDeduplicator.TryReserve(update.Id))
+        {
+            _logger.LogInformation("Ignored a repeated Telegram webhook delivery of update {UpdateId}", update.Id);
+            return TypedResults.Ok();
+        }
+
+        try
+        {
+            await _updateDispatcher.EnqueueUpdateAsync(update, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Telegram gave up on this delivery before the update was queued; let its repeat through.
+            _updateDeduplicator.Release(update.Id);
+            throw;
+        }
+
         return TypedResults.Ok();
     }
 }

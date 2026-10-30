@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Pacos.Services;
 using Telegram.Bot.Exceptions;
+using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
@@ -15,6 +16,7 @@ internal sealed class TelegramLongPollingReceiverTests
     private static readonly int[] FirstBatchIds = [10, 11];
     private static readonly int?[] OffsetsAfterFirstBatch = [null, 12, 12];
     private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(10);
+    private static readonly Type[] DeleteRetriedThenPolled = [typeof(DeleteWebhookRequest), typeof(DeleteWebhookRequest), typeof(GetUpdatesRequest)];
 
     [Test]
     public void ReceiveAsync_DispatchesUpdatesInOrderAndConfirmsThemWithTheNextOffset()
@@ -98,6 +100,47 @@ internal sealed class TelegramLongPollingReceiverTests
         {
             Assert.That(pollsDuringPause, Is.EqualTo(1));
             Assert.That(client.GetUpdatesRequests, Has.Count.EqualTo(3));
+        });
+    }
+
+    [Test]
+    public void ReceiveAsync_DeletesTheWebhookOnceBeforeTheFirstPoll()
+    {
+        using var stopPolling = new CancellationTokenSource();
+        var client = new ScriptedTelegramBotClient(stopPolling, () => [], () => []);
+
+        Assert.CatchAsync<OperationCanceledException>(
+            () => CreateReceiver(client, new FakeTimeProvider()).ReceiveAsync(new RecordingUpdateDispatcher(), AllowedUpdates, stopPolling.Token));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(client.Requests[0], Is.InstanceOf<DeleteWebhookRequest>());
+            Assert.That(client.Requests.OfType<DeleteWebhookRequest>().Count(), Is.EqualTo(1));
+            Assert.That(client.GetUpdatesRequests, Has.Count.EqualTo(3));
+        });
+    }
+
+    /// <summary>
+    /// Polling next to a webhook that is still registered would only ever get 409 Conflict, so a
+    /// failed deletion must be retried rather than skipped.
+    /// </summary>
+    [Test]
+    public void ReceiveAsync_WhenWebhookDeletionFails_RetriesItBeforePolling()
+    {
+        using var stopPolling = new CancellationTokenSource();
+        var timeProvider = new FakeTimeProvider();
+        var client = new ScriptedTelegramBotClient(stopPolling);
+        client.DeleteWebhookScript.Enqueue(() => throw new RequestException("Bot API Service Failure"));
+
+        var receiving = CreateReceiver(client, timeProvider).ReceiveAsync(new RecordingUpdateDispatcher(), AllowedUpdates, stopPolling.Token);
+        var requestsDuringPause = client.Requests.Count;
+        timeProvider.Advance(TelegramLongPollingReceiver.ErrorDelay);
+
+        Assert.CatchAsync<OperationCanceledException>(() => receiving.WaitAsync(PollTimeout));
+        Assert.Multiple(() =>
+        {
+            Assert.That(requestsDuringPause, Is.EqualTo(1));
+            Assert.That(client.Requests.Select(static r => r.GetType()), Is.EqualTo(DeleteRetriedThenPolled));
         });
     }
 

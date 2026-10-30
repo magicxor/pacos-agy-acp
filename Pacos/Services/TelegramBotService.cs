@@ -5,7 +5,6 @@ using Pacos.Models.Options;
 using Pacos.Services.BackgroundTasks;
 using Pacos.Services.ChatCommandHandlers;
 using Telegram.Bot;
-using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
@@ -51,8 +50,9 @@ public sealed class TelegramBotService : ITelegramUpdateDispatcher
     {
         _logger.LogDebug("Received update with type={Update}", update.Type.ToString());
 
-        await _taskQueue.QueueBackgroundWorkItemAsync(async token =>
-            await HandleUpdateFunctionAsync(_telegramBotClient, update, token));
+        await _taskQueue.QueueBackgroundWorkItemAsync(
+            async token => await HandleUpdateFunctionAsync(_telegramBotClient, update, token),
+            cancellationToken);
     }
 
     private async Task HandleUpdateFunctionAsync(
@@ -106,20 +106,6 @@ public sealed class TelegramBotService : ITelegramUpdateDispatcher
         }
     }
 
-    private async Task DeleteWebhookAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await _telegramBotClient.DeleteWebhook(cancellationToken: cancellationToken);
-        }
-        catch (RequestException e)
-        {
-            // Polling still starts: a lingering webhook then surfaces as logged getUpdates
-            // conflicts, retried every few seconds, instead of keeping the bot down.
-            _logger.LogWarning(e, "Failed to delete the Telegram webhook before starting long polling");
-        }
-    }
-
     /// <summary>
     /// With a webhook URL configured, registers the webhook and returns; otherwise long-polls
     /// until <paramref name="cancellationToken"/> is cancelled.
@@ -139,8 +125,6 @@ public sealed class TelegramBotService : ITelegramUpdateDispatcher
             return;
         }
 
-        // getUpdates is refused for as long as a webhook is registered, e.g. by an earlier run.
-        await DeleteWebhookAsync(cancellationToken);
         _logger.LogInformation("Receiving Telegram updates via long polling");
         await _longPollingReceiver.ReceiveAsync(this, AllowedUpdates, cancellationToken);
     }
