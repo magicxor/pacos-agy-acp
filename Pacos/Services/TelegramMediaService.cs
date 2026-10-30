@@ -55,16 +55,17 @@ public sealed class TelegramMediaService
         }
 
         _logger.LogDebug("Downloading media with fileId={FileId}", fileId);
-        var fileInfo = await botClient.GetFile(fileId, cancellationToken);
-
-        if (string.IsNullOrEmpty(fileInfo.FilePath))
-        {
-            _logger.LogWarning("FilePath is null or empty for fileId={FileId}. Cannot download media", fileId);
-            return (null, "FilePath is null or empty. Cannot download media.");
-        }
 
         try
         {
+            var fileInfo = await botClient.GetFile(fileId, cancellationToken);
+
+            if (string.IsNullOrEmpty(fileInfo.FilePath))
+            {
+                _logger.LogWarning("FilePath is null or empty for fileId={FileId}. Cannot download media", fileId);
+                return (null, "FilePath is null or empty. Cannot download media.");
+            }
+
             var initialCapacity = fileSize is > 0 ? (int)Math.Min(fileSize.Value, maxFileSize) : 0;
             await using var memoryStream = initialCapacity > 0 ? new MemoryStream(initialCapacity) : new MemoryStream();
             await botClient.DownloadFile(fileInfo.FilePath, memoryStream, cancellationToken);
@@ -72,7 +73,7 @@ public sealed class TelegramMediaService
             _logger.LogInformation("Successfully downloaded media with fileId={FileId}, size={Size} bytes", fileId, downloadedBytes.Length);
             return (downloadedBytes, null);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogError(ex, "Error downloading media with fileId={FileId}", fileId);
             return (null, ex.Message);
