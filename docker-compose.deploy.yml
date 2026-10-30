@@ -7,6 +7,8 @@
 #   PACOS_IMAGE        - full image ref, e.g. registry/pacos:latest
 #   CONTAINER_NAME     - stable bot container name, e.g. pacos2-production
 #   AGY_VOLUME_NAME    - pre-existing named volume with agy state, e.g. pacos_agy_acp_production
+#   PACOS_HTTP_PORT    - loopback host port the host nginx proxies the Telegram webhook to,
+#                        e.g. 8081 (production) / 8082 (staging)
 #   PACOS__*           - bot configuration (secrets/vars), see deploy_latest.yml
 #   *_API_KEY          - web search provider keys for the websearch-mcp sidecar (all optional)
 services:
@@ -35,6 +37,13 @@ services:
       # Shared crawl4ai bearer token (same value as the crawl4ai service's CRAWL4AI_API_TOKEN),
       # forwarded to the Crawl4AiMcp server so it can authenticate against the sidecar.
       - Pacos__Crawl4AiApiToken=${CRAWL4AI_API_TOKEN}
+      # Optional public URL of the Telegram webhook (the host nginx forwards it to PACOS_HTTP_PORT);
+      # empty keeps the bot on long polling.
+      - Pacos__WebhookUrl=${PACOS__WEBHOOKURL}
+    ports:
+      # Loopback only: ports published by Docker bypass the host firewall (ufw), and the webhook
+      # is meant to be reached through the host nginx, which terminates TLS.
+      - "127.0.0.1:${PACOS_HTTP_PORT}:8080"
     volumes:
       - agy-state:/home/agent/.gemini
     depends_on:

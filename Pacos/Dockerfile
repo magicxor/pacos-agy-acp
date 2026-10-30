@@ -49,8 +49,9 @@ FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./Pacos.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
-# --- Runtime image: .NET runtime + agy CLI + agy-acp adapter ---
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
+# --- Runtime image: ASP.NET Core runtime + agy CLI + agy-acp adapter ---
+# ASP.NET Core (not the plain .NET runtime) because the bot serves the optional Telegram webhook.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl jq tini procps ffmpeg \
     && rm -rf /var/lib/apt/lists/*
@@ -168,6 +169,9 @@ COPY --from=publish --chown=agent:agent /app/publish .
 # >= 1.1.3 is fail-closed: everything outside the allow list is auto-denied.
 
 USER agent
+# Telegram webhook endpoint (only mapped when Pacos__WebhookUrl is set); the aspnet base image
+# makes Kestrel listen here via ASPNETCORE_HTTP_PORTS.
+EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD pgrep -f Pacos.dll || exit 1
 ENTRYPOINT ["tini", "--", "dotnet", "Pacos.dll"]

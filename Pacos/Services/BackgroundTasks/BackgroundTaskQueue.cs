@@ -23,11 +23,12 @@ public sealed class BackgroundTaskQueue : IBackgroundTaskQueue
     public int ItemCount => _queue.Reader.Count;
 
     public async ValueTask QueueBackgroundWorkItemAsync(
-        Func<CancellationToken, ValueTask> workItem)
+        Func<CancellationToken, ValueTask> workItem,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(workItem);
 
-        await _queue.Writer.WriteAsync(workItem);
+        await _queue.Writer.WriteAsync(workItem, cancellationToken);
     }
 
     public async ValueTask<Func<CancellationToken, ValueTask>> DequeueAsync(
