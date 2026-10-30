@@ -51,7 +51,7 @@ internal sealed class TelegramLongPollingReceiverTests
                 client.GetUpdatesRequests.Select(static r => r.Timeout),
                 Has.All.EqualTo((int)TelegramRequestTimeouts.LongPolling.TotalSeconds));
             Assert.That(client.GetUpdatesRequests.Select(static r => r.AllowedUpdates), Has.All.EqualTo(AllowedUpdates));
-            Assert.That(TelegramRequestTimeouts.LongPolling, Is.GreaterThan(TimeSpan.Zero).And.LessThan(TelegramRequestTimeouts.DefaultAttempt));
+            Assert.That(TelegramRequestTimeouts.LongPolling, Is.GreaterThan(TimeSpan.Zero).And.LessThan(TelegramRequestTimeouts.ReadAttempt));
         });
     }
 
