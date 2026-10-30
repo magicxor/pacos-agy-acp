@@ -19,7 +19,7 @@ public sealed class Worker : BackgroundService
         using var serviceScope = _serviceScopeFactory.CreateScope();
 
         _telegramBotService = serviceScope.ServiceProvider.GetRequiredService<TelegramBotService>();
-        _telegramBotService.Start(stoppingToken);
+        await _telegramBotService.RunAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {

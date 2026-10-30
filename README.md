@@ -44,6 +44,7 @@ The bot reads its settings from environment variables or an `appsettings.json` f
 **Optional:**
 
 - `FallbackChatModel`: Model retried once when the primary model fails with a quota error (HTTP 429 / RESOURCE_EXHAUSTED). Pick one billed against a different quota pool than `ChatModel` (e.g. `Claude Sonnet 4.6 (Thinking)` when the primary is a Gemini model); the value must exactly match a label from `agy models`. Empty disables the fallback.
+- `WebhookUrl`: Public HTTPS URL for receiving updates via a Telegram webhook (e.g. `https://pacos.example.com/telegram/webhook`). The bot registers it on startup with a per-run secret token and serves the URL's path on its HTTP port (`8080` in the Docker image), so a reverse proxy must forward that path unchanged. Empty (default) deletes any registered webhook and uses long polling.
 - `AgyAcpCommand`: Executable used to spawn the agy-acp adapter (default: `agy-acp`).
 - `AgyAcpArgs`: Extra command-line arguments passed to the agy-acp process.
 - `WorkingDirectoryRoot`: Root directory under which per-chat working directories are created (default: a folder under the system temp directory).
@@ -66,6 +67,8 @@ The bot reads its settings from environment variables or an `appsettings.json` f
 When running in Docker, the agy state directory (`/home/agent/.gemini`) should be backed by a named volume so the agent's OAuth credentials and state persist across deployments (see the deploy workflow). The `movieadvisor-api` sidecar keeps its SQLite database on the `movieadvisor-state` volume for the same reason: without it every chat's movie history resets on redeploy and the whole cinema line-up looks new again.
 
 The Docker image ships a patched `agy`: `Pacos/scripts/patch_agy_recovery_notice.py` (run in the `agy-patcher` stage of `Pacos/Dockerfile`) locates `cortex.(*CascadeManager).sendRecoveryMessage` in the Go binary by signature and turns it into a `ret`, so agy stops appending the "[Notice] All your subagents and background tasks have been stopped due to server restart" step to the context on every resumed turn. The build fails if the signature is not found; after bumping `AGY_VERSION` re-check the patcher (a failing image build is the signal).
+
+In production the webhook is reached through nginx on the host, which terminates TLS and proxies the webhook path to the container's port published on `127.0.0.1:${PACOS_HTTP_PORT}` (`docker-compose.deploy.yml`). Set the `PACOS__WEBHOOKURL` and `PACOS_HTTP_PORT` variables of each GitHub environment (a distinct port per environment) to enable it; leaving `PACOS__WEBHOOKURL` empty keeps that environment on long polling.
 
 For local development the web search provider keys go into a git-ignored `.env` file next to `docker-compose.yml` (`EXA_API_KEY=...`, one per line); in production the deploy workflow exports them from GitHub secrets of the same names. To change the provider order, regenerate `websearch-mcp.config.json` with the aggregator's own CLI and commit the result, e.g. `uvx web-search-plus-mcp==4.1.1 config --config-path websearch-mcp.config.json set-priority exa,parallel,tavily,linkup,brave,firecrawl`.
 
