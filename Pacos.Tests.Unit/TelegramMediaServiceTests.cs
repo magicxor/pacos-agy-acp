@@ -1,4 +1,7 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using Pacos.Models;
 using Pacos.Services;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
@@ -8,6 +11,8 @@ namespace Pacos.Tests.Unit;
 [Parallelizable(scope: ParallelScope.All)]
 internal sealed class TelegramMediaServiceTests
 {
+    private static readonly TelegramFileMetadata PhotoMetadata = new("photo", "image/jpeg", 1234);
+
     [Test]
     public void GetFileMetadata_WhenStickerIsStatic_ShouldReturnWebp()
     {
@@ -67,4 +72,31 @@ internal sealed class TelegramMediaServiceTests
 
         Assert.That(TelegramMediaService.GetFileMetadata(message), Is.Null);
     }
+
+    [Test]
+    public async Task DownloadMediaAsync_WhenGetFileFails_ShouldReturnErrorMessage()
+    {
+        const string errorMessage = "Bot API Service Failure: TimeoutRejectedException";
+        var botClient = new ThrowingTelegramBotClient(() => new RequestException(errorMessage));
+
+        var (fileBytes, actualErrorMessage) = await CreateService().DownloadMediaAsync(PhotoMetadata, botClient, CancellationToken.None);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(fileBytes, Is.Null);
+            Assert.That(actualErrorMessage, Is.EqualTo(errorMessage));
+        }
+    }
+
+    [Test]
+    public async Task DownloadMediaAsync_WhenCancelled_ShouldRethrow()
+    {
+        using var cancellationTokenSource = new CancellationTokenSource();
+        await cancellationTokenSource.CancelAsync();
+        var botClient = new ThrowingTelegramBotClient(() => new OperationCanceledException(cancellationTokenSource.Token));
+
+        Assert.CatchAsync<OperationCanceledException>(() => CreateService().DownloadMediaAsync(PhotoMetadata, botClient, cancellationTokenSource.Token));
+    }
+
+    private static TelegramMediaService CreateService() => new(NullLogger<TelegramMediaService>.Instance);
 }

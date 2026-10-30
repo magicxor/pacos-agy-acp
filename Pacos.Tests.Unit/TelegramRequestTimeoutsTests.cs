@@ -1,5 +1,6 @@
 using Pacos.Services;
 using Polly;
+using Telegram.Bot;
 
 namespace Pacos.Tests.Unit;
 
@@ -8,44 +9,64 @@ namespace Pacos.Tests.Unit;
 internal sealed class TelegramRequestTimeoutsTests
 {
     private const string SendPhotoUrl = "https://api.telegram.org/bot0:token/sendPhoto";
+    private const string GetFileUrl = "https://api.telegram.org/bot0:token/getFile";
+
+    private static readonly (TimeSpan Attempt, TimeSpan Total) ReadTimeouts = (TelegramRequestTimeouts.ReadAttempt, TelegramRequestTimeouts.ReadTotal);
+    private static readonly (TimeSpan Attempt, TimeSpan Total) DefaultTimeouts = (TelegramRequestTimeouts.DefaultAttempt, TelegramRequestTimeouts.DefaultTotal);
+    private static readonly (TimeSpan Attempt, TimeSpan Total) UploadTimeouts = (TelegramRequestTimeouts.UploadAttempt, TelegramRequestTimeouts.UploadTotal);
 
     [Test]
-    public void GetAttemptTimeout_MultipartRequest_ReturnsUploadAttempt()
+    public void GetTimeouts_MultipartRequest_ReturnsUploadTimeouts()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, SendPhotoUrl);
         request.Content = new MultipartFormDataContent();
 
-        var timeout = GetAttemptTimeout(request);
-
-        Assert.That(timeout, Is.EqualTo(TelegramRequestTimeouts.UploadAttempt));
+        Assert.That(GetTimeouts(request), Is.EqualTo(UploadTimeouts));
     }
 
     [Test]
-    public void GetAttemptTimeout_JsonRequest_ReturnsDefaultAttempt()
+    public void GetTimeouts_JsonSendRequest_ReturnsDefaultTimeouts()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, SendPhotoUrl);
         request.Content = new StringContent("{}");
 
-        var timeout = GetAttemptTimeout(request);
-
-        Assert.That(timeout, Is.EqualTo(TelegramRequestTimeouts.DefaultAttempt));
+        Assert.That(GetTimeouts(request), Is.EqualTo(DefaultTimeouts));
     }
 
     [Test]
-    public void GetAttemptTimeout_NoRequestMessage_ReturnsDefaultAttempt()
+    public void GetTimeouts_JsonGetRequest_ReturnsReadTimeouts()
     {
-        var timeout = GetAttemptTimeout(request: null);
+        using var request = new HttpRequestMessage(HttpMethod.Post, GetFileUrl);
+        request.Content = new StringContent("{}");
 
-        Assert.That(timeout, Is.EqualTo(TelegramRequestTimeouts.DefaultAttempt));
+        Assert.That(GetTimeouts(request), Is.EqualTo(ReadTimeouts));
     }
 
-    private static TimeSpan GetAttemptTimeout(HttpRequestMessage? request)
+    [Test]
+    public void GetTimeouts_NoRequestMessage_ReturnsDefaultTimeouts()
+    {
+        Assert.That(GetTimeouts(request: null), Is.EqualTo(DefaultTimeouts));
+    }
+
+    [Test]
+    public async Task GetTimeouts_GetFileSentByTelegramBotClient_ReturnsReadTimeouts()
+    {
+        using var handler = new RecordingHttpMessageHandler("""{"ok":true,"result":{"file_id":"file","file_unique_id":"unique"}}""");
+        using var httpClient = new HttpClient(handler);
+        var botClient = new TelegramBotClient("123:token", httpClient);
+
+        await botClient.GetFile("file");
+
+        Assert.That(GetTimeouts(handler.Requests.Single()), Is.EqualTo(ReadTimeouts));
+    }
+
+    private static (TimeSpan Attempt, TimeSpan Total) GetTimeouts(HttpRequestMessage? request)
     {
         var context = ResilienceContextPool.Shared.Get();
         try
         {
             context.SetRequestMessage(request);
-            return TelegramRequestTimeouts.GetAttemptTimeout(context);
+            return (TelegramRequestTimeouts.GetAttemptTimeout(context), TelegramRequestTimeouts.GetTotalTimeout(context));
         }
         finally
         {
