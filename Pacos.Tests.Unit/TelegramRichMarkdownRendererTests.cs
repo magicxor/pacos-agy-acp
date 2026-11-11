@@ -60,6 +60,37 @@ internal sealed class TelegramRichMarkdownRendererTests
     }
 
     [Test]
+    [TestCase("Hello, {name}!", "Hello, {name}!")]
+    [TestCase("See {#anchor} and {.class} here", "See {#anchor} and {.class} here")]
+    [TestCase("Set {key=value} here", "Set {key=value} here")]
+    [TestCase(@"Formula \frac{a}{b}", @"Formula \\frac{a}{b}")]
+    [TestCase("# Title {#custom-id}", "# Title {#custom-id}")]
+    public void Render_WhenTextContainsBraces_ShouldKeepThemAsText(string standardMarkdown, string expectedRichMarkdown)
+    {
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
+    [TestCase(":   Definition text")]
+    [TestCase("~   Definition text")]
+    public void Render_WhenLineLooksLikeDefinition_ShouldKeepPrecedingLine(string definitionLine)
+    {
+        var richMarkdown = Render(string.Join('\n', "Term", definitionLine));
+
+        Assert.That(richMarkdown, Does.StartWith("Term"));
+        Assert.That(richMarkdown, Does.EndWith("Definition text"));
+    }
+
+    [Test]
+    public void Render_WhenBracketedTextMatchesHeading_ShouldNotTurnItIntoLink()
+    {
+        var standardMarkdown = string.Join('\n', "# My Heading", string.Empty, "See [My Heading] for details.");
+        var expectedRichMarkdown = string.Join('\n', "# My Heading", string.Empty, @"See \[My Heading] for details.");
+
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
     [TestCase("**bold**", "**bold**")]
     [TestCase("__bold__", "**bold**")]
     [TestCase("*italic*", "*italic*")]
@@ -407,6 +438,90 @@ internal sealed class TelegramRichMarkdownRendererTests
     }
 
     [Test]
+    [TestCase(@"When $a \ne 0$ holds", @"When $a \ne 0$ holds")]
+    [TestCase("Product $a_1 * b_2$ here", "Product $a_1 * b_2$ here")]
+    [TestCase("Energy $$E = mc^2$$ here", "Energy $E = mc^2$ here")]
+    public void Render_WhenInlineFormula_ShouldEmitItUnescaped(string standardMarkdown, string expectedRichMarkdown)
+    {
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenFootnoteDefinitionContainsFormulaBlock_ShouldEmitInlineFormula()
+    {
+        var standardMarkdown = string.Join(
+            '\n',
+            "Ref[^1].",
+            string.Empty,
+            "[^1]: The identity",
+            string.Empty,
+            "    $$",
+            "    a^2 +",
+            "    b^2",
+            "    $$");
+        var expectedRichMarkdown = string.Join(
+            '\n',
+            "Ref[^1].",
+            string.Empty,
+            "[^1]: The identity $a^2 + b^2$");
+
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
+    [TestCase("Money: $5 + $10 = $15", @"Money: \$5 + \$10 = \$15")]
+    [TestCase("5$ and 10$", @"5\$ and 10\$")]
+    [TestCase("$HOME/$PATH", @"\$HOME/\$PATH")]
+    public void Render_WhenDollarsAreNotFormulaDelimiters_ShouldEscapeThem(string standardMarkdown, string expectedRichMarkdown)
+    {
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenFormulaBlock_ShouldEmitMathFence()
+    {
+        var standardMarkdown = string.Join('\n', "$$", @"a &= b \\", "c &= d", "$$");
+        var expectedRichMarkdown = string.Join('\n', "```math", @"a &= b \\", "c &= d", "```");
+
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenParagraphIsSingleDisplayFormula_ShouldEmitMathFence()
+    {
+        const string standardMarkdown = "$$E = mc^2$$";
+        var expectedRichMarkdown = string.Join('\n', "```math", "E = mc^2", "```");
+
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenListItemContainsFormulaBlock_ShouldIndentMathFence()
+    {
+        var standardMarkdown = string.Join('\n', "- item:", string.Empty, "  $$", "  E = mc^2", "  $$");
+        var expectedRichMarkdown = string.Join('\n', "- item:", string.Empty, "  ```math", "  E = mc^2", "  ```");
+
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
+    public void Render_WhenTableCellContainsFormula_ShouldKeepItInline()
+    {
+        var standardMarkdown = string.Join(
+            '\n',
+            "| F |",
+            "|---|",
+            "| $x^2$ |");
+        var expectedRichMarkdown = string.Join(
+            '\n',
+            "| F     |",
+            "|-------|",
+            "| $x^2$ |");
+
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
     [TestCase("checkbox_test.md")]
     [TestCase("image_test.md")]
     [TestCase("table_test.md")]
@@ -421,6 +536,7 @@ internal sealed class TelegramRichMarkdownRendererTests
     [TestCase("code_blocks.md")]
     [TestCase("html_tags.md")]
     [TestCase("rich_features.md")]
+    [TestCase("math_test.md")]
     public async Task Render_ShouldReturnValidRichMarkdown(string fileName)
     {
         var standardMarkdown = await File.ReadAllTextAsync(Path.Combine("Files", fileName));

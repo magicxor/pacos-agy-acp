@@ -1,0 +1,53 @@
+# Formulas
+
+Inline: when $a \ne 0$, the roots are $x = {-b \pm \sqrt{b^2-4ac} \over 2a}$ and that is it.
+
+Display formula on a single line:
+
+$$E = mc^2$$
+
+Display formula as a block:
+
+$$
+\begin{aligned}
+(a + b)^2 &= a^2 + 2ab + b^2 \\
+(a - b)^2 &= a^2 - 2ab + b^2
+\end{aligned}
+$$
+
+Fenced formula:
+
+```math
+\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}
+```
+
+Display formula right after text:
+$$\sum_{i=1}^{n} i = \frac{n(n+1)}{2}$$
+
+Mid-sentence display $$a_1 * b_2$$ stays inline.
+
+- List item with $\alpha_i * \beta_j$ and *emphasis*
+
+  $$
+  \vec{F} = m\vec{a}
+  $$
+
+> Quoted formula $e^{i\pi} + 1 = 0$
+>
+> $$
+> \nabla \cdot \vec{E} = \frac{\rho}{\varepsilon_0}
+> $$
+
+| Name | Formula |
+|------|---------|
+| Norm | $\lvert x \rvert$ |
+| Area | $S = \pi r^2$ |
+
+Formula block right after text:
+$$
+x^2 + y^2 = z^2
+$$
+
+Not formulas: $5 + $10 = $15, $HOME/$PATH, US$100–US$200, `$x$` in code.
+
+Not formulas either: 5$ and 10$.

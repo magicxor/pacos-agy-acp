@@ -95,6 +95,10 @@
     <Content Include="Files\rich_features.md">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <None Remove="Files\math_test.md" />
+    <Content Include="Files\math_test.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>
