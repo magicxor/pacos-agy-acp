@@ -104,6 +104,47 @@ internal sealed class TelegramMarkdownRendererTests
     }
 
     [Test]
+    [TestCase("Hello, {name}!", @"Hello, \{name\}\!")]
+    [TestCase("See {#anchor} and {.class} here", @"See \{\#anchor\} and \{\.class\} here")]
+    [TestCase("Set {key=value} here", @"Set \{key\=value\} here")]
+    [TestCase(@"Formula \frac{a}{b}", @"Formula \\frac\{a\}\{b\}")]
+    [TestCase("# Title {#custom-id}", @"*Title \{\#custom\-id\}*")]
+    public void Render_WhenTextContainsBraces_ShouldKeepThemAsText(string standardMarkdown, string expectedTelegramMarkdown)
+    {
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
+    [TestCase(":   Definition text")]
+    [TestCase("~   Definition text")]
+    public void Render_WhenLineLooksLikeDefinition_ShouldKeepPrecedingLine(string definitionLine)
+    {
+        var standardMarkdown = string.Join('\n', "Term", definitionLine);
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Does.StartWith("Term" + Environment.NewLine));
+        Assert.That(actualTelegramMarkdown, Does.EndWith("Definition text"));
+    }
+
+    [Test]
+    public void Render_WhenBracketedTextMatchesHeading_ShouldNotTurnItIntoLink()
+    {
+        var standardMarkdown = string.Join('\n', "# My Heading", string.Empty, "See [My Heading] for details.");
+        var expectedTelegramMarkdown = string.Join(
+            Environment.NewLine,
+            "*My Heading*",
+            string.Empty,
+            @"See \[My Heading\] for details\.");
+
+        var standardMarkdownDoc = Markdown.Parse(standardMarkdown, MarkdownPipeline);
+        var actualTelegramMarkdown = new TelegramMarkdownRenderer().Render(standardMarkdownDoc);
+        Assert.That(actualTelegramMarkdown, Is.EqualTo(expectedTelegramMarkdown));
+    }
+
+    [Test]
     [TestCase("NOTE", "ℹ️ Note")]
     [TestCase("TIP", "💡 Tip")]
     [TestCase("IMPORTANT", "❗ Important")]

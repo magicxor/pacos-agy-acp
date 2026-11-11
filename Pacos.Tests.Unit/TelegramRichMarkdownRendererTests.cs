@@ -60,6 +60,37 @@ internal sealed class TelegramRichMarkdownRendererTests
     }
 
     [Test]
+    [TestCase("Hello, {name}!", "Hello, {name}!")]
+    [TestCase("See {#anchor} and {.class} here", "See {#anchor} and {.class} here")]
+    [TestCase("Set {key=value} here", "Set {key=value} here")]
+    [TestCase(@"Formula \frac{a}{b}", @"Formula \\frac{a}{b}")]
+    [TestCase("# Title {#custom-id}", "# Title {#custom-id}")]
+    public void Render_WhenTextContainsBraces_ShouldKeepThemAsText(string standardMarkdown, string expectedRichMarkdown)
+    {
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
+    [TestCase(":   Definition text")]
+    [TestCase("~   Definition text")]
+    public void Render_WhenLineLooksLikeDefinition_ShouldKeepPrecedingLine(string definitionLine)
+    {
+        var richMarkdown = Render(string.Join('\n', "Term", definitionLine));
+
+        Assert.That(richMarkdown, Does.StartWith("Term"));
+        Assert.That(richMarkdown, Does.EndWith("Definition text"));
+    }
+
+    [Test]
+    public void Render_WhenBracketedTextMatchesHeading_ShouldNotTurnItIntoLink()
+    {
+        var standardMarkdown = string.Join('\n', "# My Heading", string.Empty, "See [My Heading] for details.");
+        var expectedRichMarkdown = string.Join('\n', "# My Heading", string.Empty, @"See \[My Heading] for details.");
+
+        Assert.That(Render(standardMarkdown), Is.EqualTo(expectedRichMarkdown));
+    }
+
+    [Test]
     [TestCase("**bold**", "**bold**")]
     [TestCase("__bold__", "**bold**")]
     [TestCase("*italic*", "*italic*")]
