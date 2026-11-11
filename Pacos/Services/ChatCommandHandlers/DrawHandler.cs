@@ -58,16 +58,11 @@ public sealed class DrawHandler
             return;
         }
 
-        // Locate optional source images: the user's own message and the post it replies to.
-        var userImageMetadata = GetImageMetadata(updateMessage);
-        var repliedImageMetadata = updateMessage.ReplyToMessage is not null
-            ? GetImageMetadata(updateMessage.ReplyToMessage)
-            : null;
-
-        // Download both images best-effort; a single failed download must not block generation.
+        // Download optional source images — from the user's own message and the post it replies to —
+        // best-effort; a single failed download must not block generation.
         var attachments = new List<ChatInputFile>();
-        await AddImageAsync(userImageMetadata, ChatInputOrigin.UserMessage);
-        await AddImageAsync(repliedImageMetadata, ChatInputOrigin.RepliedMessage);
+        await AddImagesAsync(updateMessage, ChatInputOrigin.UserMessage);
+        await AddImagesAsync(updateMessage.ReplyToMessage, ChatInputOrigin.RepliedMessage);
 
         var isGroupChat = updateMessage.Chat.Type is ChatType.Group or ChatType.Supergroup;
         var drawMessage = BuildDrawMessage(author, prompt, repliedToMessageText, attachments.Count);
@@ -118,13 +113,16 @@ public sealed class DrawHandler
         _logger.LogInformation("Sent {Count} generated file(s) to {Author}", sentCount, author);
         return;
 
-        async Task AddImageAsync(TelegramFileMetadata? metadata, ChatInputOrigin origin)
+        async Task AddImagesAsync(Message? sourceMessage, ChatInputOrigin origin)
         {
-            if (metadata is null)
+            foreach (var metadata in GetImageMetadata(sourceMessage))
             {
-                return;
+                await AddImageAsync(metadata, origin);
             }
+        }
 
+        async Task AddImageAsync(TelegramFileMetadata metadata, ChatInputOrigin origin)
+        {
             var (imageBytes, downloadError) = await _telegramMediaService.DownloadMediaAsync(metadata, botClient, cancellationToken);
             if (imageBytes is null)
             {
@@ -163,14 +161,14 @@ public sealed class DrawHandler
     }
 
     /// <summary>
-    /// Gets image metadata from a message (Photo or Sticker only).
-    /// Returns null for other media types.
+    /// Gets the metadata of every image of a message (photos, stickers, image documents and
+    /// the images of its rich message), capped at <see cref="Const.MaxInputFilesPerMessage"/>.
+    /// Other media types are skipped.
     /// </summary>
-    private static TelegramFileMetadata? GetImageMetadata(Message message)
-    {
-        var metadata = TelegramMediaService.GetFileMetadata(message);
-        return metadata?.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true
-            ? metadata
-            : null;
-    }
+    internal static IReadOnlyList<TelegramFileMetadata> GetImageMetadata(Message? message) =>
+    [
+        .. TelegramMediaService.GetAllFileMetadata(message)
+            .Where(metadata => metadata.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            .Take(Const.MaxInputFilesPerMessage),
+    ];
 }

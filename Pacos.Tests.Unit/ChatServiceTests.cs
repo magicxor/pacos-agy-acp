@@ -54,4 +54,58 @@ internal sealed class ChatServiceTests
             Assert.That(response.TimedOut, Is.False);
         });
     }
+
+    [Test]
+    public void ResolveFileNames_WhenNoAttachments_ReturnsNoNames()
+    {
+        Assert.That(ChatService.ResolveFileNames([], 42), Is.Empty);
+    }
+
+    [Test]
+    public void ResolveFileNames_WhenEachMessageHasOneFile_KeepsPlainNames()
+    {
+        var names = ChatService.ResolveFileNames(
+            [InputFile("image/jpeg", ChatInputOrigin.UserMessage), InputFile("video/mp4", ChatInputOrigin.RepliedMessage)],
+            42);
+
+        Assert.That(string.Join(' ', names), Is.EqualTo("user_message_42.jpg replied_message_42.mp4"));
+    }
+
+    [Test]
+    public void ResolveFileNames_WhenMessageHasSeveralFiles_NumbersThemInOrder()
+    {
+        var names = ChatService.ResolveFileNames(
+            [
+                InputFile("image/jpeg", ChatInputOrigin.RepliedMessage),
+                InputFile("image/jpeg", ChatInputOrigin.RepliedMessage),
+                InputFile("application/pdf", ChatInputOrigin.RepliedMessage),
+            ],
+            42);
+
+        Assert.That(string.Join(' ', names), Is.EqualTo("replied_message_42_1.jpg replied_message_42_2.jpg replied_message_42_3.pdf"));
+    }
+
+    [Test]
+    public void ResolveFileNames_WhenBothMessagesHaveFiles_NumbersEachMessageSeparately()
+    {
+        var names = ChatService.ResolveFileNames(
+            [
+                InputFile("image/png", ChatInputOrigin.UserMessage),
+                InputFile("image/jpeg", ChatInputOrigin.RepliedMessage),
+                InputFile("audio/ogg", ChatInputOrigin.RepliedMessage),
+            ],
+            42);
+
+        Assert.That(string.Join(' ', names), Is.EqualTo("user_message_42.png replied_message_42_1.jpg replied_message_42_2.ogg"));
+    }
+
+    [Test]
+    public void ResolveFileNames_WhenMimeTypeIsUnknown_UsesBinExtension()
+    {
+        var names = ChatService.ResolveFileNames([InputFile("application/zip", ChatInputOrigin.UserMessage)], 42);
+
+        Assert.That(string.Join(' ', names), Is.EqualTo("user_message_42.bin"));
+    }
+
+    private static ChatInputFile InputFile(string mimeType, ChatInputOrigin origin) => new([1, 2, 3], mimeType, origin);
 }

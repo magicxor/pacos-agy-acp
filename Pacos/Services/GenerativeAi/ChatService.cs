@@ -54,11 +54,12 @@ public sealed class ChatService : IAsyncDisposable
             var inputFiles = new List<(string Path, ChatInputOrigin Origin)>();
             if (attachments is not null)
             {
-                foreach (var originalAttachment in attachments)
+                var normalizedAttachments = attachments.Select(_inputImageNormalizer.Normalize).ToList();
+                var fileNames = ResolveFileNames(normalizedAttachments, messageId);
+
+                foreach (var (attachment, fileName) in normalizedAttachments.Zip(fileNames))
                 {
-                    var attachment = _inputImageNormalizer.Normalize(originalAttachment);
-                    var resolvedName = ResolveFileName(attachment.MimeType, messageId, attachment.Origin);
-                    var inputFilePath = workspace.WriteInputFile(attachment.Bytes, resolvedName);
+                    var inputFilePath = workspace.WriteInputFile(attachment.Bytes, fileName);
                     inputFiles.Add((inputFilePath, attachment.Origin));
                     _logger.LogInformation("Stored attached file ({Origin}) for chat {ChatId} at {Path}", attachment.Origin, chatId, inputFilePath);
                 }
@@ -154,15 +155,37 @@ public sealed class ChatService : IAsyncDisposable
         return workingDir;
     }
 
-    private static string ResolveFileName(string? mimeType, long messageId, ChatInputOrigin origin)
+    /// <summary>
+    /// Names the input files of a turn. The only file of a message keeps the plain
+    /// <c>{origin}_{messageId}</c> name; several files of one message would collide under it,
+    /// so they are numbered in reading order.
+    /// </summary>
+    internal static IReadOnlyList<string> ResolveFileNames(IReadOnlyList<ChatInputFile> attachments, long messageId)
     {
-        var prefix = origin switch
+        var fileCountsByOrigin = attachments.CountBy(attachment => attachment.Origin).ToDictionary();
+        var ordinalsByOrigin = new Dictionary<ChatInputOrigin, int>();
+        var fileNames = new List<string>(attachments.Count);
+
+        foreach (var attachment in attachments)
         {
-            ChatInputOrigin.RepliedMessage => "replied_message",
-            _ => "user_message",
-        };
-        var extension = MimeToExtension(mimeType);
-        return $"{prefix}_{messageId.ToString(CultureInfo.InvariantCulture)}{extension}";
+            var origin = attachment.Origin;
+            var ordinal = ordinalsByOrigin.GetValueOrDefault(origin) + 1;
+            ordinalsByOrigin[origin] = ordinal;
+
+            var prefix = origin switch
+            {
+                ChatInputOrigin.RepliedMessage => "replied_message",
+                _ => "user_message",
+            };
+            var ordinalSuffix = fileCountsByOrigin[origin] > 1
+                ? string.Create(CultureInfo.InvariantCulture, $"_{ordinal}")
+                : string.Empty;
+            var extension = MimeToExtension(attachment.MimeType);
+
+            fileNames.Add(string.Create(CultureInfo.InvariantCulture, $"{prefix}_{messageId}{ordinalSuffix}{extension}"));
+        }
+
+        return fileNames;
     }
 
     private static string MimeToExtension(string? mimeType) => mimeType?.ToLowerInvariant() switch
