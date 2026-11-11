@@ -92,6 +92,9 @@ public static class Const
     // and in unformatted captions.
     public const string TurnTimeoutNotice = "(Ответ неполный: не уложился в лимит времени и остановился на полпути. Можно попросить продолжить.)";
     public const int MaxTelegramMediaGroupSize = 10;
+
+    // A rich message can embed many files; this bounds how many of one message are downloaded for the agent.
+    public const int MaxInputFilesPerMessage = 10;
     public const int MaxTelegramPhotoSizeBytes = 10 * 1024 * 1024;
     public const int MaxTelegramFileSizeBytes = 50 * 1024 * 1024;
     public const int MaxTelegramPhotoMaxDimension = 2560;
