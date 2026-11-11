@@ -46,7 +46,7 @@
     <PackageVersion Include="Polly.Contrib.WaitAndRetry" Version="1.1.1" />
     <PackageVersion Include="SkiaSharp" Version="4.151.1" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.151.1" />
-    <PackageVersion Include="Telegram.Bot" Version="22.10.3" />
+    <PackageVersion Include="Telegram.Bot" Version="22.10.4" />
     <PackageVersion Include="Verify" Version="32.0.0" />
     <PackageVersion Include="Verify.NUnit" Version="32.0.0" />
   </ItemGroup>

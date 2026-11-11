@@ -15,6 +15,16 @@ public static class RichMessagePlainText
         return sb.ToString().TrimEnd();
     }
 
+    // Each element is a separate quotable text (e.g. a paragraph), so they are joined with line feeds
+    public static string GetPlainText(this RichText[]? texts)
+    {
+        if (texts is null) return string.Empty;
+        var sb = new StringBuilder();
+        foreach (var text in texts)
+            AppendTextLine(sb, text);
+        return sb.ToString().TrimEnd();
+    }
+
     private static void AppendBlocks(StringBuilder sb, RichBlock[]? blocks)
     {
         if (blocks is null) return;
