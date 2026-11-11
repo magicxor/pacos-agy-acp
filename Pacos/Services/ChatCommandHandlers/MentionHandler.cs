@@ -290,8 +290,9 @@ public sealed class MentionHandler
             response = new ChatResponseInfo($"{e.GetType().Name}: {e.Message}", []);
         }
 
-        // Short replies keep the classic MarkdownV2 message; anything longer than the regular
-        // message limit is sent as a rich message, which allows up to MaxTelegramRichMessageLength
+        // Short replies keep the classic MarkdownV2 message. A rich message, which allows up to
+        // MaxTelegramRichMessageLength, is used for anything longer than the regular message limit
+        // and for replies with tables or formulas, which only a rich message can display
         var replyText = response.ToReplyText(Const.MaxTelegramRichMessageLength);
 
         if (string.IsNullOrWhiteSpace(replyText) && response.Files.Count == 0)
@@ -301,25 +302,23 @@ public sealed class MentionHandler
 
         if (!string.IsNullOrWhiteSpace(replyText))
         {
+            var richMarkdownDocument = _markdownConversionService.ParseRichMarkdown(replyText);
+
             if (replyText.Length > Const.MaxTelegramMessageLength)
             {
-                await SendRichReply(replyText, response.ToReplyText(Const.MaxTelegramMessageLength));
+                // The fallback is cut to the regular message limit, so a partial reply keeps
+                // its timeout notice even when rich delivery fails
+                await SendRichReply(
+                    richMarkdownDocument,
+                    () => SendReply(response.ToReplyText(Const.MaxTelegramMessageLength), ParseMode.None));
+            }
+            else if (richMarkdownDocument.RequiresRichMessage)
+            {
+                await SendRichReply(richMarkdownDocument, SendMarkdownReply);
             }
             else
             {
-                var markdownReplyText = _markdownConversionService.ConvertToTelegramMarkdown(replyText);
-
-                _logger.LogInformation("Replying to {Author} with: {ReplyText}", author, replyText);
-
-                try
-                {
-                    await SendReply(markdownReplyText, ParseMode.MarkdownV2);
-                }
-                catch (Exception e)
-                {
-                    _logger.LogError(e, "Failed to send message with MarkdownV2. Falling back to plain text");
-                    await SendReply(replyText, ParseMode.None);
-                }
+                await SendMarkdownReply();
             }
         }
 
@@ -397,13 +396,33 @@ public sealed class MentionHandler
                 cancellationToken: cancellationToken);
         }
 
-        // plainTextFallback is pre-cut to the regular message limit by the caller, so a partial
-        // reply keeps its timeout notice even when rich delivery fails.
-        async Task SendRichReply(string text, string plainTextFallback)
+        async Task SendMarkdownReply()
         {
-            var richMarkdownText = _markdownConversionService.ConvertToTelegramRichMarkdown(text);
+            var markdownReplyText = _markdownConversionService.ConvertToTelegramMarkdown(replyText);
 
-            _logger.LogInformation("Replying to {Author} with a rich message of {Length} characters", author, text.Length);
+            _logger.LogInformation("Replying to {Author} with: {ReplyText}", author, replyText);
+
+            try
+            {
+                await SendReply(markdownReplyText, ParseMode.MarkdownV2);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Failed to send message with MarkdownV2. Falling back to plain text");
+                await SendReply(replyText, ParseMode.None);
+            }
+        }
+
+        async Task SendRichReply(RichMarkdownDocument document, Func<Task> sendFallbackReply)
+        {
+            var richMarkdownText = document.ToTelegramRichMarkdown();
+
+            _logger.LogInformation(
+                "Replying to {Author} with a rich message of {Length} characters (tables: {HasTables}, formulas: {HasMath})",
+                author,
+                replyText.Length,
+                document.HasTables,
+                document.HasMath);
 
             try
             {
@@ -415,8 +434,8 @@ public sealed class MentionHandler
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "Failed to send rich message. Falling back to cut plain text");
-                await SendReply(plainTextFallback, ParseMode.None);
+                _logger.LogError(e, "Failed to send rich message. Falling back to a regular message");
+                await sendFallbackReply();
             }
         }
     }
