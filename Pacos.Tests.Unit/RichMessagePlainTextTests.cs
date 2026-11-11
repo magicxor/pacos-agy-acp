@@ -197,6 +197,63 @@ internal sealed class RichMessagePlainTextTests
     }
 
     [Test]
+    [SetCulture("ru-RU")]
+    public void GetPlainText_WhenMapWithLocation_ShouldReturnCultureInvariantCoordinates()
+    {
+        var message = MessageOf(new RichBlockMap
+        {
+            Location = new Location { Latitude = 55.751244, Longitude = 37.618423 },
+            Zoom = 14,
+        });
+        Assert.That(message.GetPlainText(), Is.EqualTo("[Map: 55.751244, 37.618423]"));
+    }
+
+    [Test]
+    public void GetPlainText_WhenMapWithLocationAndCaption_ShouldPutCoordinatesBeforeCaption()
+    {
+        var message = MessageOf(new RichBlockMap
+        {
+            Location = new Location { Latitude = -33.5, Longitude = 151.25 },
+            Zoom = 14,
+            Caption = new RichBlockCaption { Text = Plain("Подпись карты") },
+        });
+        var expected = string.Join('\n', "[Map: -33.5, 151.25]", "Подпись карты");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenButtonRow_ShouldPutButtonsOnOneLineAndKeepLinkTargets()
+    {
+        var message = MessageOf(
+            Paragraph("Выберите действие"),
+            new RichBlockButtons
+            {
+                Buttons =
+                [
+                    new RichMessageButton { Text = Plain("Сайт"), Url = "https://example.com/" },
+                    new RichMessageButton { Text = Bold(Plain("Приложение")), WebApp = new WebAppInfo { Url = "https://app.example.com/" } },
+                    new RichMessageButton { Text = Plain("Войти"), LoginUrl = new LoginUrl { Url = "https://login.example.com/" } },
+                    new RichMessageButton { Text = Plain("Ответить"), CallbackData = "reply" },
+                ],
+            },
+            Paragraph("После кнопок"));
+        var expected = string.Join(
+            '\n',
+            "Выберите действие",
+            "[Сайт](https://example.com/) | [Приложение](https://app.example.com/) | [Войти](https://login.example.com/) | Ответить",
+            "После кнопок");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenButtonRowIsEmpty_ShouldContributeNothing()
+    {
+        var message = MessageOf(Paragraph("A"), new RichBlockButtons { Buttons = [] }, Paragraph("B"));
+        var expected = string.Join('\n', "A", "B");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
     public void GetPlainText_WhenThinkingBlock_ShouldReturnItsText()
     {
         var message = MessageOf(new RichBlockThinking { Text = Plain("Thinking...") });
@@ -236,6 +293,9 @@ internal sealed class RichMessagePlainTextTests
         yield return new TestCaseData(new RichTextCustomEmoji { CustomEmojiId = "5368324170671202286" }, string.Empty);
         yield return new TestCaseData(new RichTextMathematicalExpression { Expression = "x^2 + y^2" }, "x^2 + y^2");
         yield return new TestCaseData(new RichTextAnchor { Name = "chapter-1" }, string.Empty);
+        yield return new TestCaseData(new RichTextTonAddress { Text = Plain("UQBv…XggGG"), Address = "UQBvW8Z5huBkMJYdnfAEM5JqTNkuWX3diqYENkWsIL0XggGG" }, "UQBv…XggGG");
+        yield return new TestCaseData(new RichTextButton { Button = new RichMessageButton { Text = Plain("Нажми") } }, "Нажми");
+        yield return new TestCaseData(new RichTextButton { Button = new RichMessageButton { Text = Plain("Открыть"), Url = "https://t.me/" } }, "[Открыть](https://t.me/)");
     }
 
     [TestCaseSource(nameof(InlineEntityCases))]
@@ -390,6 +450,39 @@ internal sealed class RichMessagePlainTextTests
             ],
         });
         var expected = string.Join('\n', "> Заголовок в цитате", "> Пункт в цитате");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenExpandableBlockQuotation_ShouldMarkEveryLine()
+    {
+        var message = MessageOf(new RichBlockExpandableBlockQuotation
+        {
+            Text = TextArray(Plain("Первая строка цитаты\n"), Bold(Plain("Последняя строка цитаты"))),
+        });
+        var expected = string.Join('\n', "> Первая строка цитаты", "> Последняя строка цитаты");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenExpandableBlockQuotationWithCredit_ShouldAppendCreditAfterContent()
+    {
+        var message = MessageOf(
+            Paragraph("До"),
+            new RichBlockExpandableBlockQuotation { Text = Plain("Цитата"), Credit = Plain("Автор") },
+            Paragraph("После"));
+        var expected = string.Join('\n', "До", "> Цитата", "> — Автор", "После");
+        Assert.That(message.GetPlainText(), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetPlainText_WhenExpandableBlockQuotationInsideBlockQuotation_ShouldNestMarkers()
+    {
+        var message = MessageOf(new RichBlockBlockQuotation
+        {
+            Blocks = [Paragraph("Внешняя"), new RichBlockExpandableBlockQuotation { Text = Plain("Внутренняя") }],
+        });
+        var expected = string.Join('\n', "> Внешняя", "> > Внутренняя");
         Assert.That(message.GetPlainText(), Is.EqualTo(expected));
     }
 
@@ -692,6 +785,9 @@ internal sealed class RichMessagePlainTextTests
         yield return new TestCaseData(
             new RichBlockVoiceNote { Caption = new RichBlockCaption { Text = Plain("Подпись голосового") } },
             "Подпись голосового");
+        yield return new TestCaseData(
+            new RichBlockDocument { Caption = new RichBlockCaption { Text = Plain("Подпись документа") } },
+            "Подпись документа");
     }
 
     [TestCaseSource(nameof(MediaBlockWithCaptionCases))]
