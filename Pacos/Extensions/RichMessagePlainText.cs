@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Telegram.Bot.Types;
 
@@ -51,6 +52,7 @@ public static class RichMessagePlainText
 
             // container blocks (contain nested blocks)
             case RichBlockBlockQuotation b: AppendBlockQuotation(sb, b); break;
+            case RichBlockExpandableBlockQuotation b: AppendExpandableBlockQuotation(sb, b); break;
             case RichBlockDetails b:
                 AppendTextLine(sb, b.Summary);
                 AppendBlocks(sb, b.Blocks);
@@ -74,7 +76,12 @@ public static class RichMessagePlainText
             case RichBlockAnimation b: AppendCaption(sb, b.Caption); break;
             case RichBlockAudio b:     AppendCaption(sb, b.Caption); break;
             case RichBlockVoiceNote b: AppendCaption(sb, b.Caption); break;
-            case RichBlockMap b:       AppendCaption(sb, b.Caption); break;
+            case RichBlockDocument b:  AppendCaption(sb, b.Caption); break;
+
+            // a map has no file: its location is the only content besides the caption
+            case RichBlockMap b: AppendMapLocation(sb, b.Location); AppendCaption(sb, b.Caption); break;
+
+            case RichBlockButtons b: AppendButtonRow(sb, b.Buttons); break;
 
             // RichBlockDivider, RichBlockAnchor — no text
             default: break;
@@ -126,16 +133,28 @@ public static class RichMessagePlainText
         sb.Append('\n');
     }
 
-    // Quotation lines get the markdown ">" marker so quoted words stay distinguishable in the LLM prompt;
-    // the credit gets an attribution dash
     private static void AppendBlockQuotation(StringBuilder sb, RichBlockBlockQuotation quotation)
     {
         var innerSb = new StringBuilder();
         AppendBlocks(innerSb, quotation.Blocks);
-        if (quotation.Credit is not null)
+        AppendQuotation(sb, innerSb, quotation.Credit);
+    }
+
+    private static void AppendExpandableBlockQuotation(StringBuilder sb, RichBlockExpandableBlockQuotation quotation)
+    {
+        var innerSb = new StringBuilder();
+        AppendTextLine(innerSb, quotation.Text);
+        AppendQuotation(sb, innerSb, quotation.Credit);
+    }
+
+    // Quotation lines get the markdown ">" marker so quoted words stay distinguishable in the LLM prompt;
+    // the credit gets an attribution dash
+    private static void AppendQuotation(StringBuilder sb, StringBuilder innerSb, RichText? credit)
+    {
+        if (credit is not null)
         {
             innerSb.Append("— ");
-            AppendTextLine(innerSb, quotation.Credit);
+            AppendTextLine(innerSb, credit);
         }
 
         var inner = innerSb.ToString().TrimEnd('\n');
@@ -167,19 +186,48 @@ public static class RichMessagePlainText
     }
 
     // The link target is kept in markdown syntax; without it the URL would be lost for the LLM prompt
-    private static void AppendUrl(StringBuilder sb, RichTextUrl url)
+    private static void AppendLink(StringBuilder sb, RichText? linkText, string? url)
     {
         var textSb = new StringBuilder();
-        AppendText(textSb, url.Text);
+        AppendText(textSb, linkText);
         var text = textSb.ToString();
 
-        if (string.IsNullOrEmpty(url.Url) || text == url.Url)
+        if (string.IsNullOrEmpty(url) || text == url)
         {
             sb.Append(text);
             return;
         }
 
-        sb.Append('[').Append(text).Append("](").Append(url.Url).Append(')');
+        sb.Append('[').Append(text).Append("](").Append(url).Append(')');
+    }
+
+    // A button shows its text; one that opens a link keeps the target, like any other link
+    private static void AppendButton(StringBuilder sb, RichMessageButton? button)
+    {
+        if (button is null) return;
+        AppendLink(sb, button.Text, button.Url ?? button.WebApp?.Url ?? button.LoginUrl?.Url);
+    }
+
+    // Buttons of a block are shown in one row, so they share one line
+    private static void AppendButtonRow(StringBuilder sb, RichMessageButton[]? buttons)
+    {
+        if (buttons is null || buttons.Length == 0) return;
+
+        for (var i = 0; i < buttons.Length; i++)
+        {
+            if (i > 0)
+                sb.Append(" | ");
+
+            AppendButton(sb, buttons[i]);
+        }
+
+        sb.Append('\n');
+    }
+
+    private static void AppendMapLocation(StringBuilder sb, Location? location)
+    {
+        if (location is null) return;
+        sb.Append(CultureInfo.InvariantCulture, $"[Map: {location.Latitude}, {location.Longitude}]").Append('\n');
     }
 
     private static string GetTableCellText(RichBlockTableCell cell)
@@ -232,10 +280,11 @@ public static class RichMessagePlainText
             case RichTextStrikethrough t:  AppendText(sb, t.Text); break;
             case RichTextSpoiler t:        AppendText(sb, t.Text); break;
             case RichTextCode t:           AppendText(sb, t.Text); break;
-            case RichTextUrl t:            AppendUrl(sb, t); break;
+            case RichTextUrl t:            AppendLink(sb, t.Text, t.Url); break;
             case RichTextEmailAddress t:   AppendText(sb, t.Text); break;
             case RichTextPhoneNumber t:    AppendText(sb, t.Text); break;
             case RichTextBankCardNumber t: AppendText(sb, t.Text); break;
+            case RichTextTonAddress t:     AppendText(sb, t.Text); break;
             case RichTextTextMention t:    AppendText(sb, t.Text); break;
             case RichTextMention t:        AppendText(sb, t.Text); break;
             case RichTextHashtag t:        AppendText(sb, t.Text); break;
@@ -252,6 +301,7 @@ public static class RichMessagePlainText
             // these have no nested ".Text" — use a meaningful value
             case RichTextCustomEmoji t:            sb.Append(t.AlternativeText); break;
             case RichTextMathematicalExpression t: sb.Append(t.Expression); break;
+            case RichTextButton t:                 AppendButton(sb, t.Button); break;
 
             // RichTextAnchor — an invisible named anchor, no text
             default: break;

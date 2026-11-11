@@ -256,20 +256,10 @@ public sealed class MentionHandler
         const int maxFileSize = 10_000_000;
 
         // Collect media from both the user's own message and the post it replies to, so the
-        // agent receives both files. The order (user first, then replied-to) matches reading order.
+        // agent receives all of their files. The order (user first, then replied-to) matches reading order.
         var attachments = new List<ChatInputFile>();
-
-        var userAttachment = await DownloadAttachmentAsync(updateMessage, ChatInputOrigin.UserMessage);
-        if (userAttachment is not null)
-        {
-            attachments.Add(userAttachment);
-        }
-
-        var repliedAttachment = await DownloadAttachmentAsync(updateMessage.ReplyToMessage, ChatInputOrigin.RepliedMessage);
-        if (repliedAttachment is not null)
-        {
-            attachments.Add(repliedAttachment);
-        }
+        await AddAttachmentsAsync(updateMessage, ChatInputOrigin.UserMessage);
+        await AddAttachmentsAsync(updateMessage.ReplyToMessage, ChatInputOrigin.RepliedMessage);
 
         ChatResponseInfo response;
 
@@ -334,14 +324,37 @@ public sealed class MentionHandler
 
         return;
 
-        async Task<ChatInputFile?> DownloadAttachmentAsync(Message? sourceMessage, ChatInputOrigin origin)
+        async Task AddAttachmentsAsync(Message? sourceMessage, ChatInputOrigin origin)
         {
-            var fileMetadata = TelegramMediaService.GetFileMetadata(sourceMessage);
-            if (fileMetadata is null)
+            var allFileMetadata = TelegramMediaService.GetAllFileMetadata(sourceMessage);
+
+            foreach (var fileMetadata in allFileMetadata.Take(Const.MaxInputFilesPerMessage))
             {
-                return null;
+                var attachment = await DownloadAttachmentAsync(fileMetadata, origin);
+                if (attachment is not null)
+                {
+                    attachments.Add(attachment);
+                }
             }
 
+            var skippedFileCount = allFileMetadata.Count - Const.MaxInputFilesPerMessage;
+            if (skippedFileCount <= 0)
+            {
+                return;
+            }
+
+            _logger.LogWarning("Skipped {SkippedFileCount} file(s) ({Origin}) over the limit of {MaxFileCount} for message from {Author}",
+                skippedFileCount,
+                origin,
+                Const.MaxInputFilesPerMessage,
+                author);
+
+            // Surface the skipped files to the LLM, so it does not answer as if it has seen them all.
+            fullMessageToLlm = $"{fullMessageToLlm}\n\n[Media limit: {skippedFileCount} more file(s) from the message were not attached]";
+        }
+
+        async Task<ChatInputFile?> DownloadAttachmentAsync(TelegramFileMetadata fileMetadata, ChatInputOrigin origin)
+        {
             _logger.LogInformation("Media info ({Origin}) for message from {Author}: FileId={FileId}, MimeType={MimeType}",
                 origin,
                 author,
