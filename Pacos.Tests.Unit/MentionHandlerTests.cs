@@ -150,6 +150,41 @@ internal sealed class MentionHandlerTests
     }
 
     [Test]
+    public void ResolveRepliedToText_WhenQuoteFromRichMessage_ShouldReturnQuotedFragmentOnly()
+    {
+        var updateMessage = new Message
+        {
+            Text = "@pacos что это значит?",
+            ReplyToMessage = new Message
+            {
+                RichMessage = new RichMessage
+                {
+                    Blocks =
+                    [
+                        new RichBlockParagraph { Text = new RichTextText { Text = "Первый абзац.", }, },
+                        new RichBlockParagraph { Text = new RichTextText { Text = "Второй абзац.", }, },
+                    ],
+                },
+            },
+            Quote = new TextQuote
+            {
+                Text = string.Empty,
+                RichTexts = [new RichTextText { Text = "Второй абзац.", },],
+                Position = 14,
+                IsManual = true,
+            },
+        };
+
+        var (text, isQuotedFragment) = MentionHandler.ResolveRepliedToText(updateMessage);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Is.EqualTo("Второй абзац."));
+            Assert.That(isQuotedFragment, Is.True);
+        });
+    }
+
+    [Test]
     public void ResolveRepliedToText_WhenNoQuote_ShouldReturnFullRepliedText()
     {
         var updateMessage = new Message
