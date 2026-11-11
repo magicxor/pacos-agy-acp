@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Markdig.Extensions.Alerts;
 using Markdig.Extensions.Footnotes;
+using Markdig.Extensions.Mathematics;
 using Markdig.Extensions.Tables;
 using Markdig.Extensions.TaskLists;
 using Markdig.Syntax;
@@ -18,12 +19,16 @@ namespace Pacos.Services.Markdown;
 /// </summary>
 public sealed class TelegramRichMarkdownRenderer
 {
+    /// <summary>The info string of a fenced code block that Rich Markdown renders as a formula.</summary>
+    internal const string MathBlockInfo = "math";
+
     // Soft breaks are emitted as GFM hard breaks to preserve the line structure of the source
     // text; a bare newline would be collapsed into a space. The backslash form is used instead
     // of two trailing spaces because trailing whitespace does not survive editors and linters
     // (e.g. the .editorconfig of this very repository trims it in the snapshot files).
     private const string HardLineBreak = "\\\n";
     private const int MinTableColumnWidth = 3;
+    private const int DisplayMathDelimiterCount = 2;
 
     private readonly StringBuilder _output = new();
     private readonly HashSet<string> _activeMarkers = new(StringComparer.Ordinal);
@@ -62,6 +67,9 @@ public sealed class TelegramRichMarkdownRenderer
             case QuoteBlock quote:
                 RenderQuote(quote);
                 break;
+            case MathBlock math:
+                RenderMathBlock(math);
+                break;
             case CodeBlock code:
                 RenderCodeBlock(code);
                 break;
@@ -97,6 +105,15 @@ public sealed class TelegramRichMarkdownRenderer
 
     private void RenderParagraph(ParagraphBlock paragraph)
     {
+        // "$$…$$" alone in a paragraph is a display formula, which Rich Markdown expresses as a block
+        if (!InSingleLine
+            && paragraph.Inline is { FirstChild: MathInline { DelimiterCount: DisplayMathDelimiterCount } math } inlines
+            && ReferenceEquals(math, inlines.LastChild))
+        {
+            AppendFencedBlock(MathBlockInfo, math.Content.ToString());
+            return;
+        }
+
         RenderInlines(paragraph.Inline);
         _output.Append("\n\n");
     }
@@ -244,16 +261,39 @@ public sealed class TelegramRichMarkdownRenderer
 
     private void RenderCodeBlock(CodeBlock code)
     {
+        var info = code is FencedCodeBlock { Info: { Length: > 0 } fencedInfo } ? fencedInfo : string.Empty;
+        AppendFencedBlock(info, code.Lines.ToString());
+    }
+
+    private void RenderMathBlock(MathBlock math)
+    {
+        var expression = math.Lines.ToString();
+        if (InSingleLine)
+        {
+            // A fenced block cannot live on a single line, so the formula degrades to an inline one
+            AppendInlineMath(expression);
+            _output.Append("\n\n");
+            return;
+        }
+
+        // A ```math fence is used instead of $$…$$ because it keeps multi-line LaTeX unambiguous
+        AppendFencedBlock(MathBlockInfo, expression);
+    }
+
+    private void AppendInlineMath(string? expression)
+    {
+        // The formula source is raw LaTeX: nothing is escaped, and a line break is plain whitespace there
+        var content = EscapeTableCellPipes(FlattenToSingleLine(expression ?? string.Empty));
+        _output.Append('$').Append(content).Append('$');
+    }
+
+    private void AppendFencedBlock(string info, string? rawContent)
+    {
         // Markdig keeps the source line endings, so CRLF input would leak '\r' into the output
-        var content = (code.Lines.ToString() ?? string.Empty).ReplaceLineEndings("\n");
+        var content = (rawContent ?? string.Empty).ReplaceLineEndings("\n");
         var fence = new string('`', Math.Max(3, content.LongestRunOf('`') + 1));
 
-        _output.Append(fence);
-        if (code is FencedCodeBlock { Info.Length: > 0 } fenced)
-        {
-            _output.Append(fenced.Info);
-        }
-        _output.Append('\n');
+        _output.Append(fence).Append(info).Append('\n');
         if (content.Length > 0)
         {
             _output.Append(content).Append('\n');
@@ -409,6 +449,9 @@ public sealed class TelegramRichMarkdownRenderer
             case CodeInline code:
                 RenderCodeInline(code);
                 break;
+            case MathInline math:
+                AppendInlineMath(math.Content.ToString());
+                break;
             case AutolinkInline autolink:
                 // Left unescaped so Telegram's automatic entity detection turns it into a link
                 _output.Append(autolink.Url);
@@ -497,13 +540,7 @@ public sealed class TelegramRichMarkdownRenderer
 
     private void RenderCodeInline(CodeInline code)
     {
-        var content = code.Content;
-        if (InTableCell)
-        {
-            // GFM processes table cell pipes before inline code, so they are escaped even here
-            content = content.Replace("|", "\\|", StringComparison.Ordinal);
-        }
-
+        var content = EscapeTableCellPipes(code.Content);
         var fence = new string('`', content.LongestRunOf('`') + 1);
         var needsPadding = content.Length == 0
             || content[0] == '`'
@@ -512,6 +549,10 @@ public sealed class TelegramRichMarkdownRenderer
         var padding = needsPadding ? " " : string.Empty;
         _output.Append(fence).Append(padding).Append(content).Append(padding).Append(fence);
     }
+
+    // GFM processes table cell pipes before inline code and formulas, so they are escaped even in raw content
+    private string EscapeTableCellPipes(string content)
+        => InTableCell ? content.Replace("|", "\\|", StringComparison.Ordinal) : content;
 
     private TelegramRichMarkdownRenderer CreateChild(bool singleLine = false) => new()
     {

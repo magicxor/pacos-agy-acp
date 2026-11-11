@@ -24,9 +24,9 @@ public static class MarkdownPipelineExtensions
     /// Pipeline for <see cref="Pacos.Services.Markdown.TelegramRichMarkdownRenderer"/>. Only extensions whose
     /// syntax maps onto Telegram Rich Markdown are enabled: spoilers (||…||), alerts (rendered as labeled quotes),
     /// strikethrough (~~…~~) and marked (==…==) emphasis, pipe/grid tables (re-emitted as pipe tables),
-    /// task lists (- [x]), footnotes ([^id]), list extras and autolinks (bare URLs are kept unescaped for
-    /// Telegram's automatic entity detection). HTML-oriented extensions (auto identifiers, media links,
-    /// generic attributes, definition lists) are intentionally left out.
+    /// task lists (- [x]), footnotes ([^id]), LaTeX formulas ($…$ and $$…$$), list extras and autolinks
+    /// (bare URLs are kept unescaped for Telegram's automatic entity detection). HTML-oriented extensions
+    /// (auto identifiers, media links, generic attributes, definition lists) are intentionally left out.
     /// </summary>
     public static MarkdownPipelineBuilder UseRichMdExtensions(this MarkdownPipelineBuilder pipeline)
     {
@@ -40,6 +40,7 @@ public static class MarkdownPipelineExtensions
             .UseListExtras()
             .UseTaskLists()
             .UseFootnotes()
+            .UseMathematics()
             .UseAutoLinks();
     }
 }
